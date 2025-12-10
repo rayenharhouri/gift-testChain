@@ -7,16 +7,18 @@ import "../contracts/GoldAssetToken.sol";
 
 contract DeployGIFT is Script {
     function run() external {
+        // Read private key from environment (with or without 0x prefix)
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy MemberRegistry
         MemberRegistry memberRegistry = new MemberRegistry();
-        vm.writeLine("stdout", string(abi.encodePacked("MemberRegistry: ", vm.toString(address(memberRegistry)))));
+        console.log("MemberRegistry:", address(memberRegistry));
 
         // Deploy GoldAssetToken
         GoldAssetToken goldAssetToken = new GoldAssetToken(address(memberRegistry));
-        vm.writeLine("stdout", string(abi.encodePacked("GoldAssetToken: ", vm.toString(address(goldAssetToken)))));
+        console.log("GoldAssetToken:", address(goldAssetToken));
 
         vm.stopBroadcast();
     }

@@ -10,6 +10,11 @@ if [ -z "$RPC_URL" ] || [ -z "$PRIVATE_KEY" ]; then
     exit 1
 fi
 
+# Add 0x prefix if not present
+if [[ ! "$PRIVATE_KEY" =~ ^0x ]]; then
+    PRIVATE_KEY="0x$PRIVATE_KEY"
+fi
+
 echo "📋 Configuration:"
 echo "  RPC: $RPC_URL"
 echo "  Deployer: $(cast wallet address --private-key $PRIVATE_KEY)"
@@ -24,13 +29,12 @@ echo ""
 
 # Deploy using forge script
 echo "2️⃣  Deploying contracts..."
-DEPLOY_OUTPUT=$(forge script script/Deploy.s.sol:DeployGIFT \
+DEPLOY_OUTPUT=$(PRIVATE_KEY="$PRIVATE_KEY" forge script script/Deploy.s.sol:DeployGIFT \
   --rpc-url "$RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
   --broadcast 2>&1)
 
-MEMBER_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "MemberRegistry:" | awk '{print $NF}')
-GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | awk '{print $NF}')
+MEMBER_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "MemberRegistry:" | tail -1 | awk '{print $NF}')
+GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | tail -1 | awk '{print $NF}')
 
 if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ]; then
     echo "   ❌ Deployment failed"
