@@ -123,7 +123,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     // Constructor
-    constructor(address _memberRegistry) ERC1155("") Ownable() {
+    constructor(address _memberRegistry) ERC1155("") Ownable(msg.sender) {
         memberRegistry = IMemberRegistry(_memberRegistry);
         _tokenIdCounter = 1;
     }
