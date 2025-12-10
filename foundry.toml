@@ -3,9 +3,3 @@ src = "contracts"
 out = "out"
 libs = ["lib"]
 solc = "0.8.24"
-
-[profile.default.rpc_endpoints]
-avalanche = "http://127.0.0.1:9654/ext/bc/PMwUb6MbsC32Qj86NGeFBkKJyQkehvr9xumqnEk3ryWL9FEBP/rpc"
-
-[profile.default.etherscan]
-avalanche = { key = "YOUR_ETHERSCAN_KEY", url = "https://api.snowtrace.io/api" }
