@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 # GIFT Avalanche L1 Deployment Script
 # Usage: ./deploy.sh
@@ -42,22 +41,24 @@ MEMBER_REGISTRY=$(forge create contracts/MemberRegistry.sol:MemberRegistry \
   --private-key $PRIVATE_KEY \
   --broadcast 2>&1 | grep "Deployed to:" | awk '{print $NF}')
 
+if [ -z "$MEMBER_REGISTRY" ]; then
+    echo "   ❌ MemberRegistry deployment failed"
+    exit 1
+fi
+
 echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
 echo ""
 
 # Step 3: Deploy GoldAssetToken
-echo "3️⃣  Deploying GoldAssetToken..."
-DEPLOY_OUTPUT=$(forge create contracts/GoldAssetToken.sol:GoldAssetToken \
+echo "3️⃣  Deploying GoldAssetToken (this may take a minute)..."
+GOLD_ASSET_TOKEN=$(timeout 120 forge create contracts/GoldAssetToken.sol:GoldAssetToken \
   --constructor-args $MEMBER_REGISTRY \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
-  --broadcast 2>&1)
-
-GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $NF}')
+  --broadcast 2>&1 | grep "Deployed to:" | awk '{print $NF}')
 
 if [ -z "$GOLD_ASSET_TOKEN" ]; then
-    echo "   ❌ Deployment failed"
-    echo "$DEPLOY_OUTPUT"
+    echo "   ❌ GoldAssetToken deployment failed or timed out"
     exit 1
 fi
 
