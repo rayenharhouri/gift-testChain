@@ -51,14 +51,19 @@ echo ""
 
 # Step 3: Deploy GoldAssetToken
 echo "3️⃣  Deploying GoldAssetToken (this may take a minute)..."
-GOLD_ASSET_TOKEN=$(timeout 120 forge create contracts/GoldAssetToken.sol:GoldAssetToken \
+DEPLOY_OUTPUT=$(timeout 120 forge create contracts/GoldAssetToken.sol:GoldAssetToken \
   --constructor-args $MEMBER_REGISTRY \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
-  --broadcast 2>&1 | grep "Deployed to:" | awk '{print $NF}')
+  --broadcast 2>&1)
+
+GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $NF}')
 
 if [ -z "$GOLD_ASSET_TOKEN" ]; then
-    echo "   ❌ GoldAssetToken deployment failed or timed out"
+    echo "   ❌ GoldAssetToken deployment failed"
+    echo ""
+    echo "Error output:"
+    echo "$DEPLOY_OUTPUT" | tail -20
     exit 1
 fi
 
