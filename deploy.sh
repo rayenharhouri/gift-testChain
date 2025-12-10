@@ -52,8 +52,12 @@ GOLD_ASSET_TOKEN=$(forge create contracts/GoldAssetToken.sol:GoldAssetToken \
   --constructor-args $MEMBER_REGISTRY \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
-  --broadcast \
-  --json | jq -r '.deployedTo')
+  --broadcast 2>&1 | grep -oP '(?<=Deployed to: )0x[a-fA-F0-9]{40}' | head -1)
+
+if [ -z "$GOLD_ASSET_TOKEN" ]; then
+    echo "   ❌ Deployment failed"
+    exit 1
+fi
 
 echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
 echo ""
