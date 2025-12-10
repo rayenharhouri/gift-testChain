@@ -40,22 +40,24 @@ echo "2️⃣  Deploying MemberRegistry..."
 MEMBER_REGISTRY=$(forge create contracts/MemberRegistry.sol:MemberRegistry \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
-  --broadcast \
-  --json | jq -r '.deployedTo')
+  --broadcast 2>&1 | grep "Deployed to:" | awk '{print $NF}')
 
 echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
 echo ""
 
 # Step 3: Deploy GoldAssetToken
 echo "3️⃣  Deploying GoldAssetToken..."
-GOLD_ASSET_TOKEN=$(forge create contracts/GoldAssetToken.sol:GoldAssetToken \
+DEPLOY_OUTPUT=$(forge create contracts/GoldAssetToken.sol:GoldAssetToken \
   --constructor-args $MEMBER_REGISTRY \
   --rpc-url $RPC_URL \
   --private-key $PRIVATE_KEY \
-  --broadcast 2>&1 | grep -oP '(?<=Deployed to: )0x[a-fA-F0-9]{40}' | head -1)
+  --broadcast 2>&1)
+
+GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $NF}')
 
 if [ -z "$GOLD_ASSET_TOKEN" ]; then
     echo "   ❌ Deployment failed"
+    echo "$DEPLOY_OUTPUT"
     exit 1
 fi
 
