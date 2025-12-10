@@ -1,16 +1,9 @@
 #!/bin/bash
 
 # GIFT Avalanche L1 Deployment Script
-# Usage: ./deploy.sh
 
 echo "🚀 GIFT Blockchain - Avalanche L1 Deployment"
 echo ""
-
-# Load environment
-if [ ! -f .env ]; then
-    echo "❌ .env file not found. Run: cp .env.example .env"
-    exit 1
-fi
 
 source .env
 
@@ -24,9 +17,12 @@ echo "  RPC: $RPC_URL"
 echo "  Deployer: $(cast wallet address --private-key $PRIVATE_KEY)"
 echo ""
 
+# Clean cache
+rm -rf cache/ out/
+
 # Step 1: Compile
 echo "1️⃣  Compiling contracts..."
-forge build --no-cache
+forge build
 echo "   ✅ Done"
 echo ""
 
@@ -35,7 +31,7 @@ echo "2️⃣  Deploying MemberRegistry..."
 MEMBER_REGISTRY=$(forge create contracts/MemberRegistry.sol:MemberRegistry \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \
-  --broadcast --no-cache 2>&1 | grep "Deployed to:" | awk '{print $NF}')
+  --broadcast 2>&1 | grep "Deployed to:" | awk '{print $NF}')
 
 if [ -z "$MEMBER_REGISTRY" ]; then
     echo "   ❌ MemberRegistry deployment failed"
@@ -51,7 +47,7 @@ DEPLOY_OUTPUT=$(forge create contracts/GoldAssetToken.sol:GoldAssetToken \
   --constructor-args "$MEMBER_REGISTRY" \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \
-  --broadcast --no-cache 2>&1)
+  --broadcast 2>&1)
 
 GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $NF}')
 
