@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# GIFT Avalanche L1 Deployment Script
-
 echo "🚀 GIFT Blockchain - Avalanche L1 Deployment"
 echo ""
 
@@ -17,53 +15,35 @@ echo "  RPC: $RPC_URL"
 echo "  Deployer: $(cast wallet address --private-key $PRIVATE_KEY)"
 echo ""
 
-# Clean cache
+# Clean and build
 rm -rf cache/ out/
-
-# Step 1: Compile
 echo "1️⃣  Compiling contracts..."
 forge build
 echo "   ✅ Done"
 echo ""
 
-# Step 2: Deploy MemberRegistry
-echo "2️⃣  Deploying MemberRegistry..."
-MEMBER_REGISTRY=$(forge create contracts/MemberRegistry.sol:MemberRegistry \
-  --rpc-url "$RPC_URL" \
-  --private-key "$PRIVATE_KEY" \
-  --broadcast 2>&1 | grep "Deployed to:" | awk '{print $NF}')
-
-if [ -z "$MEMBER_REGISTRY" ]; then
-    echo "   ❌ MemberRegistry deployment failed"
-    exit 1
-fi
-
-echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
-echo ""
-
-# Step 3: Deploy GoldAssetToken
-echo "3️⃣  Deploying GoldAssetToken..."
-DEPLOY_OUTPUT=$(forge create contracts/GoldAssetToken.sol:GoldAssetToken \
-  --constructor-args "$MEMBER_REGISTRY" \
+# Deploy using forge script
+echo "2️⃣  Deploying contracts..."
+DEPLOY_OUTPUT=$(forge script script/Deploy.s.sol:DeployGIFT \
   --rpc-url "$RPC_URL" \
   --private-key "$PRIVATE_KEY" \
   --broadcast 2>&1)
 
-GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "Deployed to:" | awk '{print $NF}')
+MEMBER_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "MemberRegistry:" | awk '{print $NF}')
+GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | awk '{print $NF}')
 
-if [ -z "$GOLD_ASSET_TOKEN" ]; then
-    echo "   ❌ GoldAssetToken deployment failed"
-    echo ""
-    echo "Error output:"
-    echo "$DEPLOY_OUTPUT" | tail -20
+if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ]; then
+    echo "   ❌ Deployment failed"
+    echo "$DEPLOY_OUTPUT" | tail -30
     exit 1
 fi
 
+echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
 echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
 echo ""
 
-# Step 4: Verify
-echo "4️⃣  Verifying deployment..."
+# Verify
+echo "3️⃣  Verifying deployment..."
 MEMBERS_COUNT=$(cast call "$MEMBER_REGISTRY" "getMembersCount()" --rpc-url "$RPC_URL")
 echo "   ✅ MemberRegistry members: $MEMBERS_COUNT"
 echo ""
@@ -80,8 +60,6 @@ cat > deployments/avalanche.json << EOF
 }
 EOF
 
-echo "📝 Deployment saved to: deployments/avalanche.json"
-echo ""
 echo "✅ DEPLOYMENT COMPLETE"
 echo ""
 echo "Addresses:"

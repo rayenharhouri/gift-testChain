@@ -8,22 +8,16 @@ import "../contracts/GoldAssetToken.sol";
 contract DeployGIFT is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy MemberRegistry
+        // Deploy MemberRegistry
         MemberRegistry memberRegistry = new MemberRegistry();
-        console.log("MemberRegistry deployed at:", address(memberRegistry));
+        vm.writeLine("stdout", string(abi.encodePacked("MemberRegistry: ", vm.toString(address(memberRegistry)))));
 
-        // Step 2: Deploy GoldAssetToken with MemberRegistry address
+        // Deploy GoldAssetToken
         GoldAssetToken goldAssetToken = new GoldAssetToken(address(memberRegistry));
-        console.log("GoldAssetToken deployed at:", address(goldAssetToken));
+        vm.writeLine("stdout", string(abi.encodePacked("GoldAssetToken: ", vm.toString(address(goldAssetToken)))));
 
         vm.stopBroadcast();
-
-        // Log deployment info
-        console.log("\n=== DEPLOYMENT COMPLETE ===");
-        console.log("MemberRegistry:", address(memberRegistry));
-        console.log("GoldAssetToken:", address(goldAssetToken));
     }
 }
