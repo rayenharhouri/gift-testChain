@@ -38,14 +38,13 @@ contract MemberRegistry is Ownable {
     // Structs
     struct Member {
         string memberGIC;
-        string entityName;
-        string country;
         MemberType memberType;
         MemberStatus status;
         uint256 createdAt;
         uint256 updatedAt;
         bytes32 memberHash;
         uint256 roles;
+        address userAddress;
     }
 
     struct User {
@@ -178,28 +177,28 @@ contract MemberRegistry is Ownable {
      */
     function registerMember(
         string memory memberGIC,
-        string memory entityName,
-        string memory country,
         MemberType memberType,
-        bytes32 memberHash
+        bytes32 memberHash,
+        address userAddress
     ) external onlyPlatformAdmin returns (bool) {
         require(members[memberGIC].createdAt == 0, "Member already exists");
         require(bytes(memberGIC).length > 0, "Invalid member GIC");
+        require(userAddress != address(0), "Invalid user address");
 
         Member memory newMember = Member({
             memberGIC: memberGIC,
-            entityName: entityName,
-            country: country,
             memberType: memberType,
-            status: MemberStatus.PENDING,
+            status: MemberStatus.ACTIVE,
             createdAt: block.timestamp,
             updatedAt: block.timestamp,
             memberHash: memberHash,
-            roles: 0
+            roles: 0,
+            userAddress: userAddress
         });
 
         members[memberGIC] = newMember;
         memberList.push(memberGIC);
+        addressToMemberGIC[userAddress] = memberGIC;
 
         emit MemberRegistered(memberGIC, memberType, msg.sender, block.timestamp);
         return true;
