@@ -8,6 +8,12 @@ if [ -f ".env" ]; then
   set +a
 fi
 
+TARGET_ADDRESS="${1:-${TARGET_ADDRESS:-}}"
+if [ -z "${TARGET_ADDRESS}" ]; then
+  echo "Error: TARGET_ADDRESS not provided (arg or .env)" >&2
+  exit 1
+fi
+
 : "${RPC_URL:?RPC_URL not set}"
 : "${PRIVATE_KEY:?PRIVATE_KEY not set}"
 : "${TARGET_ADDRESS:?TARGET_ADDRESS not set}"
