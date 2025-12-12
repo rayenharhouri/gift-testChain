@@ -21,12 +21,13 @@ print_role() {
     "readAllowList(address)(uint256)" "$TARGET_ADDRESS")
 
   echo "Raw role value for $TARGET_ADDRESS: $role"
+
   case "$role" in
-    0x0) echo "Decoded role: None (0)";;
-    0x1) echo "Decoded role: Enabled (1)";;
-    0x2) echo "Decoded role: Admin (2)";;
-    0x3) echo "Decoded role: Manager (3)";;
-    *)  echo "Decoded role: Unknown ($role)";;
+    0) echo "Decoded role: None (0)";;
+    1) echo "Decoded role: Enabled (1)";;
+    2) echo "Decoded role: Admin (2)";;
+    3) echo "Decoded role: Manager (3)";;
+    *) echo "Decoded role: Unknown ($role)";;
   esac
 }
 
