@@ -7,7 +7,7 @@ contract MemberRegistry is Ownable {
     
     // Role constants
     uint256 constant ROLE_REFINER = 1 << 0;
-    uint256 constant ROLE_TRADER = 1 << 1;
+    uint256 constant ROLE_MINTER = 1 << 1;
     uint256 constant ROLE_CUSTODIAN = 1 << 2;
     uint256 constant ROLE_VAULT_OP = 1 << 3;
     uint256 constant ROLE_LSP = 1 << 4;
