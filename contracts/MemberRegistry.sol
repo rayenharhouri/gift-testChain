@@ -116,7 +116,20 @@ contract MemberRegistry is Ownable {
 
     // Constructor
     constructor() Ownable(msg.sender) {
-        // Set deployer as platform admin
+        // Create PLATFORM member with all roles for deployer
+        Member memory platformMember = Member({
+            memberGIC: "PLATFORM",
+            memberType: MemberType.INSTITUTION,
+            status: MemberStatus.ACTIVE,
+            createdAt: block.timestamp,
+            updatedAt: block.timestamp,
+            memberHash: keccak256("platform"),
+            roles: ROLE_REFINER | ROLE_MINTER | ROLE_CUSTODIAN | ROLE_VAULT_OP | ROLE_LSP | ROLE_AUDITOR | ROLE_PLATFORM | ROLE_GOVERNANCE,
+            userAddress: msg.sender
+        });
+        
+        members["PLATFORM"] = platformMember;
+        memberList.push("PLATFORM");
         addressToMemberGIC[msg.sender] = "PLATFORM";
     }
 
