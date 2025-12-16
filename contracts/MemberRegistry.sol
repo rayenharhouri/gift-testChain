@@ -192,7 +192,8 @@ contract MemberRegistry is Ownable {
         string memory memberGIC,
         MemberType memberType,
         bytes32 memberHash,
-        address userAddress
+        address userAddress,
+        uint256 role
     ) external onlyPlatformAdmin returns (bool) {
         require(members[memberGIC].createdAt == 0, "Member already exists");
         require(bytes(memberGIC).length > 0, "Invalid member GIC");
@@ -205,7 +206,7 @@ contract MemberRegistry is Ownable {
             createdAt: block.timestamp,
             updatedAt: block.timestamp,
             memberHash: memberHash,
-            roles: 0,
+            roles: role,
             userAddress: userAddress
         });
 
@@ -214,6 +215,9 @@ contract MemberRegistry is Ownable {
         addressToMemberGIC[userAddress] = memberGIC;
 
         emit MemberRegistered(memberGIC, memberType, msg.sender, block.timestamp);
+        if (role != 0) {
+            emit RoleAssigned(memberGIC, role, msg.sender, block.timestamp);
+        }
         return true;
     }
 

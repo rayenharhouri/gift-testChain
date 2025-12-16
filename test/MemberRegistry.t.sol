@@ -31,7 +31,8 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            ROLE_REFINER
         );
 
         assertTrue(success);
@@ -41,6 +42,7 @@ contract MemberRegistryTest is Test {
         assertEq(uint8(member.memberType), uint8(MemberRegistry.MemberType.COMPANY));
         assertEq(uint8(member.status), uint8(MemberRegistry.MemberStatus.ACTIVE));
         assertEq(member.userAddress, refiner);
+        assertEq(member.roles, ROLE_REFINER);
     }
 
     function test_AssignRole() public {
@@ -49,7 +51,8 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            0
         );
 
         vm.prank(governance);
@@ -67,11 +70,9 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            ROLE_REFINER
         );
-
-        vm.prank(governance);
-        registry.assignRole("GIFTCHZZ", ROLE_REFINER);
 
         bool hasRole = registry.isMemberInRole(refiner, ROLE_REFINER);
         assertTrue(hasRole);
@@ -83,11 +84,9 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            ROLE_REFINER
         );
-
-        vm.prank(governance);
-        registry.assignRole("GIFTCHZZ", ROLE_REFINER);
 
         vm.prank(governance);
         bool success = registry.revokeRole("GIFTCHZZ", ROLE_REFINER);
@@ -104,7 +103,8 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            0
         );
 
         vm.prank(admin);
@@ -136,7 +136,8 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            0
         );
 
         vm.prank(admin);
@@ -211,11 +212,9 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            ROLE_REFINER
         );
-
-        vm.prank(governance);
-        registry.assignRole("GIFTCHZZ", ROLE_REFINER);
 
         bool valid = registry.validatePermission(refiner, ROLE_REFINER);
         assertTrue(valid);
@@ -227,7 +226,8 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            0
         );
 
         vm.prank(trader);
@@ -241,7 +241,8 @@ contract MemberRegistryTest is Test {
             "GIFTCHZZ",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash"),
-            refiner
+            refiner,
+            0
         );
 
         vm.prank(admin);
@@ -249,7 +250,8 @@ contract MemberRegistryTest is Test {
             "GIFTUSAA",
             MemberRegistry.MemberType.COMPANY,
             keccak256("member_hash2"),
-            trader
+            trader,
+            0
         );
 
         assertEq(registry.getMembersCount(), 3); // +1 for PLATFORM
