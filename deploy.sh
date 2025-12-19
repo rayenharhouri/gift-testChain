@@ -38,8 +38,10 @@ DEPLOY_OUTPUT=$(PRIVATE_KEY="$PRIVATE_KEY" forge script script/Deploy.s.sol:Depl
 
 MEMBER_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "MemberRegistry:" | tail -1 | awk '{print $NF}')
 GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | tail -1 | awk '{print $NF}')
+ACCOUNT_LEDGER=$(echo "$DEPLOY_OUTPUT" | grep "GoldAccountLedger:" | tail -1 | awk '{print $NF}')
 
-if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ]; then
+
+if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ]; then
     echo "   ❌ Deployment failed"
     echo "$DEPLOY_OUTPUT" | tail -30
     exit 1
@@ -47,6 +49,7 @@ fi
 
 echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
 echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
+echo "   ✅ GoldAssetToken: $ACCOUNT_LEDGER"
 echo ""
 
 # Verify
@@ -63,6 +66,7 @@ cat > deployments/avalanche.json << EOF
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "memberRegistry": "$MEMBER_REGISTRY",
   "goldAssetToken": "$GOLD_ASSET_TOKEN",
+  "goldAssetToken": "$ACCOUNT_LEDGER",
   "deployer": "$(cast wallet address --private-key $PRIVATE_KEY)"
 }
 EOF
@@ -72,3 +76,4 @@ echo ""
 echo "Addresses:"
 echo "  MemberRegistry:  $MEMBER_REGISTRY"
 echo "  GoldAssetToken:  $GOLD_ASSET_TOKEN"
+echo "  GoldAssetToken:  $ACCOUNT_LEDGER"
