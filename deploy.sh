@@ -66,7 +66,7 @@ cat > deployments/avalanche.json << EOF
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "memberRegistry": "$MEMBER_REGISTRY",
   "goldAssetToken": "$GOLD_ASSET_TOKEN",
-  "goldAssetToken": "$ACCOUNT_LEDGER",
+  "GoldAccountLedger": "$ACCOUNT_LEDGER",
   "deployer": "$(cast wallet address --private-key $PRIVATE_KEY)"
 }
 EOF
@@ -76,4 +76,4 @@ echo ""
 echo "Addresses:"
 echo "  MemberRegistry:  $MEMBER_REGISTRY"
 echo "  GoldAssetToken:  $GOLD_ASSET_TOKEN"
-echo "  GoldAssetToken:  $ACCOUNT_LEDGER"
+echo "  GoldAccountLedger:  $ACCOUNT_LEDGER"
