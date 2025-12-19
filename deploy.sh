@@ -3,7 +3,10 @@
 echo "🚀 GIFT Blockchain - Avalanche L1 Deployment"
 echo ""
 
+set -a
 source .env
+set +a
+
 
 if [ -z "$RPC_URL" ] || [ -z "$PRIVATE_KEY" ]; then
     echo "❌ RPC_URL or PRIVATE_KEY not set in .env"
