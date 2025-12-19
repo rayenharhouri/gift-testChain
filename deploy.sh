@@ -49,7 +49,7 @@ fi
 
 echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
 echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
-echo "   ✅ GoldAssetToken: $ACCOUNT_LEDGER"
+echo "   ✅ GoldAccountLedger: $ACCOUNT_LEDGER"
 echo ""
 
 # Verify
