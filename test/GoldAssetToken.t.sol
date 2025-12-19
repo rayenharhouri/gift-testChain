@@ -11,19 +11,34 @@ contract MockMemberRegistry {
         roles[member] = role;
     }
 
-    function isMemberInRole(address member, uint256 role) external view returns (bool) {
+    function isMemberInRole(
+        address member,
+        uint256 role
+    ) external view returns (bool) {
         return (roles[member] & role) != 0;
     }
 
-    function getMemberStatus(string memory memberGIC) external pure returns (uint8) {
+    function getMemberStatus(
+        string memory memberGIC
+    ) external pure returns (uint8) {
         return 1; // ACTIVE
     }
+}
+
+contract MockAccountLedger {
+    function updateBalance(
+        string memory igan,
+        int256 delta,
+        string memory reason,
+        uint256 tokenId
+    ) external {}
 }
 
 contract GoldAssetTokenTest is Test {
     GoldAssetToken public goldToken;
     MockMemberRegistry public memberRegistry;
-    
+    MockAccountLedger public accountLedger;
+
     address refiner = address(0x1);
     address custodian = address(0x2);
     address owner = address(0x3);
@@ -35,7 +50,11 @@ contract GoldAssetTokenTest is Test {
 
     function setUp() public {
         memberRegistry = new MockMemberRegistry();
-        goldToken = new GoldAssetToken(address(memberRegistry));
+        accountLedger = new MockAccountLedger();
+        goldToken = new GoldAssetToken(
+            address(memberRegistry),
+            address(accountLedger)
+        );
 
         // Set roles
         memberRegistry.setRole(refiner, ROLE_REFINER);
@@ -45,28 +64,34 @@ contract GoldAssetTokenTest is Test {
 
     function test_MintGoldAsset() public {
         vm.prank(refiner);
-        
+
         uint256 tokenId = goldToken.mint(
             owner,
             "SN123456",
             "Refiner A",
             1000000, // 100 grams (scaled by 10^4)
-            9999,    // 99.99% pure
+            9999, // 99.99% pure
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         assertEq(tokenId, 1);
-        
-        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(tokenId);
+
+        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
+            tokenId
+        );
         assertEq(asset.serialNumber, "SN123456");
         assertEq(asset.refinerName, "Refiner A");
         assertEq(asset.weightGrams, 1000000);
         assertEq(asset.fineness, 9999);
         assertEq(asset.fineWeightGrams, 999900);
-        assertEq(uint8(asset.status), uint8(GoldAssetToken.AssetStatus.REGISTERED));
+        assertEq(
+            uint8(asset.status),
+            uint8(GoldAssetToken.AssetStatus.REGISTERED)
+        );
     }
 
     function test_DuplicatePreventionFails() public {
@@ -80,7 +105,8 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         vm.prank(refiner);
@@ -94,7 +120,8 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-002"
         );
     }
 
@@ -110,7 +137,8 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
     }
 
@@ -125,14 +153,24 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         vm.prank(owner);
-        goldToken.updateStatus(tokenId, GoldAssetToken.AssetStatus.IN_VAULT, "Stored in vault");
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.IN_VAULT,
+            "Stored in vault"
+        );
 
-        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(tokenId);
-        assertEq(uint8(asset.status), uint8(GoldAssetToken.AssetStatus.IN_VAULT));
+        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
+            tokenId
+        );
+        assertEq(
+            uint8(asset.status),
+            uint8(GoldAssetToken.AssetStatus.IN_VAULT)
+        );
     }
 
     function test_BurnAsset() public {
@@ -146,13 +184,16 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         vm.prank(owner);
-        goldToken.burn(tokenId, "Delivered to customer");
+        goldToken.burn(tokenId, "IGAN-1000", "Delivered to customer");
 
-        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(tokenId);
+        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
+            tokenId
+        );
         assertEq(uint8(asset.status), uint8(GoldAssetToken.AssetStatus.BURNED));
     }
 
@@ -167,20 +208,25 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         assertFalse(goldToken.isAssetLocked(tokenId));
 
         vm.prank(owner);
-        goldToken.updateStatus(tokenId, GoldAssetToken.AssetStatus.PLEDGED, "Pledged as collateral");
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.PLEDGED,
+            "Pledged as collateral"
+        );
 
         assertTrue(goldToken.isAssetLocked(tokenId));
     }
 
     function test_VerifyCertificate() public {
         bytes32 certHash = keccak256("cert_hash");
-        
+
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
@@ -191,11 +237,14 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             certHash,
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         assertTrue(goldToken.verifyCertificate(tokenId, certHash));
-        assertFalse(goldToken.verifyCertificate(tokenId, keccak256("wrong_hash")));
+        assertFalse(
+            goldToken.verifyCertificate(tokenId, keccak256("wrong_hash"))
+        );
     }
 
     function test_GetAssetsByOwner() public {
@@ -209,7 +258,8 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
         vm.prank(refiner);
@@ -222,7 +272,8 @@ contract GoldAssetTokenTest is Test {
             GoldAssetToken.GoldProductType.COIN,
             keccak256("cert_hash2"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-002"
         );
 
         uint256[] memory assets = goldToken.getAssetsByOwner(owner);
@@ -238,14 +289,300 @@ contract GoldAssetTokenTest is Test {
             "SN123456",
             "Refiner A",
             10000, // 1 gram (scaled by 10^4)
-            5000,  // 50% pure
+            5000, // 50% pure
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
-            true
+            true,
+            "WARRANT-001"
         );
 
-        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(tokenId);
+        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
+            tokenId
+        );
         assertEq(asset.fineWeightGrams, 5000); // 10000 * 5000 / 10000 = 5000
+    }
+
+    function test_WarrantDuplicatePrevention() public {
+        vm.prank(refiner);
+        goldToken.mint(
+            owner,
+            "SN123456",
+            "Refiner A",
+            1000000,
+            9999,
+            GoldAssetToken.GoldProductType.BAR,
+            keccak256("cert_hash"),
+            "GIFTCHZZ",
+            true,
+            "WARRANT-001"
+        );
+
+        vm.prank(refiner);
+        vm.expectRevert("Warrant already used");
+        goldToken.mint(
+            owner,
+            "SN789012",
+            "Refiner B",
+            1000000,
+            9999,
+            GoldAssetToken.GoldProductType.BAR,
+            keccak256("cert_hash2"),
+            "GIFTCHZZ",
+            true,
+            "WARRANT-001"
+        );
+    }
+
+    function test_ForceTransfer() public {
+        vm.prank(refiner);
+        uint256 tokenId = goldToken.mint(
+            owner,
+            "SN123456",
+            "Refiner A",
+            1000000,
+            9999,
+            GoldAssetToken.GoldProductType.BAR,
+            keccak256("cert_hash"),
+            "GIFTCHZZ",
+            true,
+            "WARRANT-001"
+        );
+
+        address newOwner = address(0x5);
+        vm.prank(admin);
+        goldToken.forceTransfer(tokenId, owner, newOwner, "Compliance action");
+
+        assertEq(goldToken.assetOwner(tokenId), newOwner);
+    }
+
+    function test_WhitelistManagement() public {
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+
+        assertTrue(goldToken.whitelist(owner));
+
+        vm.prank(admin);
+        goldToken.removeFromWhitelist(owner);
+
+        assertFalse(goldToken.whitelist(owner));
+    }
+
+    function test_BlacklistManagement() public {
+        vm.prank(admin);
+        goldToken.addToBlacklist(owner);
+
+        assertTrue(goldToken.blacklist(owner));
+
+        vm.prank(admin);
+        goldToken.removeFromBlacklist(owner);
+
+        assertFalse(goldToken.blacklist(owner));
+    }
+
+    function _mintOne() internal returns (uint256 tokenId) {
+        vm.prank(refiner);
+        tokenId = goldToken.mint(
+            owner,
+            "SN123456",
+            "Refiner A",
+            1000000,
+            9999,
+            GoldAssetToken.GoldProductType.BAR,
+            keccak256("cert_hash"),
+            "GIFTCHZZ",
+            true,
+            "WARRANT-001"
+        );
+    }
+
+    function test_Transfer_UpdatesAssetOwner_AndEmitsOwnershipUpdated() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        // whitelist both sides (required by your _update)
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+        vm.prank(admin);
+        goldToken.addToWhitelist(to);
+
+        uint256 t = 12345;
+        vm.warp(t);
+
+        // Expect business event for normal transfer
+        vm.expectEmit(true, true, true, true);
+        emit GoldAssetToken.OwnershipUpdated(tokenId, owner, to, "TRANSFER", t);
+
+        vm.prank(owner);
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+
+        // assetOwner must be synced
+        assertEq(goldToken.assetOwner(tokenId), to);
+
+        // balances reflect ERC1155 reality too
+        assertEq(goldToken.balanceOf(owner, tokenId), 0);
+        assertEq(goldToken.balanceOf(to, tokenId), 1);
+    }
+
+    function test_Transfer_Reverts_WhenRecipientNotWhitelisted() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        // only whitelist sender
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+
+        vm.prank(owner);
+        vm.expectRevert("Transfer not whitelisted");
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+    }
+
+    function test_Transfer_Reverts_WhenSenderNotWhitelisted() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        // only whitelist recipient
+        vm.prank(admin);
+        goldToken.addToWhitelist(to);
+
+        vm.prank(owner);
+        vm.expectRevert("Transfer not whitelisted");
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+    }
+
+    function test_Transfer_Reverts_WhenEitherSideBlacklisted() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+        vm.prank(admin);
+        goldToken.addToWhitelist(to);
+
+        // blacklist recipient
+        vm.prank(admin);
+        goldToken.addToBlacklist(to);
+
+        vm.prank(owner);
+        vm.expectRevert("Address blacklisted");
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+    }
+
+    function test_Transfer_Reverts_WhenAssetLocked_Pledged() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+        vm.prank(admin);
+        goldToken.addToWhitelist(to);
+
+        // lock it
+        vm.prank(owner);
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.PLEDGED,
+            "Pledged"
+        );
+
+        vm.prank(owner);
+        vm.expectRevert("Asset locked");
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+    }
+
+    function test_Transfer_Reverts_WhenAssetLocked_InTransit() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+        vm.prank(admin);
+        goldToken.addToWhitelist(to);
+
+        // lock it
+        vm.prank(owner);
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.IN_TRANSIT,
+            "Shipping"
+        );
+
+        vm.prank(owner);
+        vm.expectRevert("Asset locked");
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+    }
+
+    function test_OldOwnerCannotBurnOrUpdateStatusAfterTransfer() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        vm.prank(admin);
+        goldToken.addToWhitelist(owner);
+        vm.prank(admin);
+        goldToken.addToWhitelist(to);
+
+        vm.prank(owner);
+        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
+
+        // old owner tries to update status -> should fail because assetOwner changed
+        vm.prank(owner);
+        vm.expectRevert("Not authorized: Owner or CUSTODIAN role required");
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.IN_VAULT,
+            "No longer owner"
+        );
+
+        // old owner tries to burn -> should fail
+        vm.prank(owner);
+        vm.expectRevert("Not authorized: Owner or CUSTODIAN role required");
+        goldToken.burn(tokenId, "IGAN-1000", "No longer owner");
+    }
+
+    function test_ForceTransfer_BypassesWhitelist() public {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        // NOTE: no whitelisting at all
+        vm.prank(admin);
+        goldToken.forceTransfer(tokenId, owner, to, "Compliance action");
+
+        assertEq(goldToken.assetOwner(tokenId), to);
+        assertEq(goldToken.balanceOf(to, tokenId), 1);
+        assertEq(goldToken.balanceOf(owner, tokenId), 0);
+    }
+
+    function test_ForceTransfer_Reverts_WhenAssetLocked_WithCurrentUpdateLogic()
+        public
+    {
+        uint256 tokenId = _mintOne();
+        address to = address(0xBEEF);
+
+        // lock it
+        vm.prank(owner);
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.PLEDGED,
+            "Pledged"
+        );
+
+        // With your current _update(), lock check is applied to all normal transfers
+        // including forceTransfer (because from/to are non-zero).
+        vm.prank(admin);
+        vm.expectRevert("Asset locked");
+        goldToken.forceTransfer(tokenId, owner, to, "Compliance action");
+    }
+
+    function test_VerifyCertificate_NonExistentToken_Reverts() public {
+        vm.expectRevert("Asset does not exist");
+        goldToken.verifyCertificate(999, bytes32(0));
+    }
+
+    function test_Burn_NonExistentToken_Reverts() public {
+        // custodian can pass onlyOwnerOrCustodian even if token doesn't exist,
+        // then the internal ERC1155 burn will revert.
+        vm.prank(custodian);
+        vm.expectRevert(); // message can vary by OZ version
+        goldToken.burn(999, "IGAN-1000", "Burn non-existent");
     }
 }

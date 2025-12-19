@@ -4,7 +4,6 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MemberRegistry is Ownable {
-    
     // Role constants
     uint256 constant ROLE_REFINER = 1 << 0;
     uint256 constant ROLE_MINTER = 1 << 1;
@@ -61,7 +60,7 @@ contract MemberRegistry is Ownable {
     mapping(string => User) public users;
     mapping(address => string) public addressToMemberGIC;
     mapping(address => string) public addressToUserId;
-    
+
     string[] public memberList;
     string[] public userList;
 
@@ -124,10 +123,17 @@ contract MemberRegistry is Ownable {
             createdAt: block.timestamp,
             updatedAt: block.timestamp,
             memberHash: keccak256("platform"),
-            roles: ROLE_REFINER | ROLE_MINTER | ROLE_CUSTODIAN | ROLE_VAULT_OP | ROLE_LSP | ROLE_AUDITOR | ROLE_PLATFORM | ROLE_GOVERNANCE,
+            roles: ROLE_REFINER |
+                ROLE_MINTER |
+                ROLE_CUSTODIAN |
+                ROLE_VAULT_OP |
+                ROLE_LSP |
+                ROLE_AUDITOR |
+                ROLE_PLATFORM |
+                ROLE_GOVERNANCE,
             userAddress: msg.sender
         });
-        
+
         members["PLATFORM"] = platformMember;
         memberList.push("PLATFORM");
         addressToMemberGIC[msg.sender] = "PLATFORM";
@@ -137,39 +143,48 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Check if member has role
      */
-    function isMemberInRole(address member, uint256 role) 
-        public view returns (bool) {
+    function isMemberInRole(
+        address member,
+        uint256 role
+    ) public view returns (bool) {
         string memory memberGIC = addressToMemberGIC[member];
-        
+
         if (bytes(memberGIC).length == 0) {
             return false;
         }
 
-        // Bootstrap: PLATFORM and GOVERNANCE are special bootstrap members
-        if (keccak256(abi.encodePacked(memberGIC)) == keccak256(abi.encodePacked("PLATFORM"))) {
-            return (ROLE_PLATFORM & role) != 0;
-        }
-        if (keccak256(abi.encodePacked(memberGIC)) == keccak256(abi.encodePacked("GOVERNANCE"))) {
+        // Optional bootstrap: allow "GOVERNANCE" string mapping even if no Member struct exists
+        if (
+            keccak256(abi.encodePacked(memberGIC)) ==
+            keccak256(abi.encodePacked("GOVERNANCE"))
+        ) {
             return (ROLE_GOVERNANCE & role) != 0;
         }
 
         Member memory m = members[memberGIC];
-        
+
         if (m.status != MemberStatus.ACTIVE) {
             return false;
         }
 
+       
         return (m.roles & role) != 0;
     }
 
     // Modifiers
     modifier onlyGovernance() {
-        require(isMemberInRole(msg.sender, ROLE_GOVERNANCE), "Not authorized: GOVERNANCE role required");
+        require(
+            isMemberInRole(msg.sender, ROLE_GOVERNANCE),
+            "Not authorized: GOVERNANCE role required"
+        );
         _;
     }
 
     modifier onlyPlatformAdmin() {
-        require(isMemberInRole(msg.sender, ROLE_PLATFORM), "Not authorized: PLATFORM role required");
+        require(
+            isMemberInRole(msg.sender, ROLE_PLATFORM),
+            "Not authorized: PLATFORM role required"
+        );
         _;
     }
 
@@ -214,7 +229,12 @@ contract MemberRegistry is Ownable {
         memberList.push(memberGIC);
         addressToMemberGIC[userAddress] = memberGIC;
 
-        emit MemberRegistered(memberGIC, memberType, msg.sender, block.timestamp);
+        emit MemberRegistered(
+            memberGIC,
+            memberType,
+            msg.sender,
+            block.timestamp
+        );
         if (role != 0) {
             emit RoleAssigned(memberGIC, role, msg.sender, block.timestamp);
         }
@@ -224,9 +244,13 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Approve pending member
      */
-    function approveMember(string memory memberGIC) 
-        external onlyGovernance memberExists(memberGIC) returns (bool) {
-        require(members[memberGIC].status == MemberStatus.PENDING, "Member not pending");
+    function approveMember(
+        string memory memberGIC
+    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
+        require(
+            members[memberGIC].status == MemberStatus.PENDING,
+            "Member not pending"
+        );
 
         members[memberGIC].status = MemberStatus.ACTIVE;
         members[memberGIC].updatedAt = block.timestamp;
@@ -238,9 +262,14 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Suspend member
      */
-    function suspendMember(string memory memberGIC, string memory reason) 
-        external onlyPlatformAdmin memberExists(memberGIC) returns (bool) {
-        require(members[memberGIC].status != MemberStatus.SUSPENDED, "Member already suspended");
+    function suspendMember(
+        string memory memberGIC,
+        string memory reason
+    ) external onlyPlatformAdmin memberExists(memberGIC) returns (bool) {
+        require(
+            members[memberGIC].status != MemberStatus.SUSPENDED,
+            "Member already suspended"
+        );
 
         members[memberGIC].status = MemberStatus.SUSPENDED;
         members[memberGIC].updatedAt = block.timestamp;
@@ -252,8 +281,9 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Terminate member
      */
-    function terminateMember(string memory memberGIC) 
-        external onlyGovernance memberExists(memberGIC) returns (bool) {
+    function terminateMember(
+        string memory memberGIC
+    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
         members[memberGIC].status = MemberStatus.TERMINATED;
         members[memberGIC].updatedAt = block.timestamp;
         return true;
@@ -264,10 +294,15 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Assign role to member
      */
-    function assignRole(string memory memberGIC, uint256 role) 
-        external onlyGovernance memberExists(memberGIC) returns (bool) {
-        require(members[memberGIC].status == MemberStatus.ACTIVE, "Member not active");
-        
+    function assignRole(
+        string memory memberGIC,
+        uint256 role
+    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
+        require(
+            members[memberGIC].status == MemberStatus.ACTIVE,
+            "Member not active"
+        );
+
         members[memberGIC].roles |= role;
         members[memberGIC].updatedAt = block.timestamp;
 
@@ -278,8 +313,10 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Revoke role from member
      */
-    function revokeRole(string memory memberGIC, uint256 role) 
-        external onlyGovernance memberExists(memberGIC) returns (bool) {
+    function revokeRole(
+        string memory memberGIC,
+        uint256 role
+    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
         members[memberGIC].roles &= ~role;
         members[memberGIC].updatedAt = block.timestamp;
 
@@ -300,7 +337,7 @@ contract MemberRegistry is Ownable {
         require(bytes(userId).length > 0, "Invalid user ID");
 
         address[] memory emptyAddresses = new address[](0);
-        
+
         User memory newUser = User({
             userId: userId,
             userHash: userHash,
@@ -321,9 +358,20 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Link user to member
      */
-    function linkUserToMember(string memory userId, string memory memberGIC) 
-        external onlyPlatformAdmin userExists(userId) memberExists(memberGIC) returns (bool) {
-        require(bytes(users[userId].linkedMemberGIC).length == 0, "User already linked");
+    function linkUserToMember(
+        string memory userId,
+        string memory memberGIC
+    )
+        external
+        onlyPlatformAdmin
+        userExists(userId)
+        memberExists(memberGIC)
+        returns (bool)
+    {
+        require(
+            bytes(users[userId].linkedMemberGIC).length == 0,
+            "User already linked"
+        );
 
         users[userId].linkedMemberGIC = memberGIC;
 
@@ -334,8 +382,10 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Add admin address to user
      */
-    function addUserAdminAddress(string memory userId, address adminAddress) 
-        external onlyPlatformAdmin userExists(userId) returns (bool) {
+    function addUserAdminAddress(
+        string memory userId,
+        address adminAddress
+    ) external onlyPlatformAdmin userExists(userId) returns (bool) {
         require(adminAddress != address(0), "Invalid address");
 
         users[userId].adminAddresses.push(adminAddress);
@@ -346,8 +396,9 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Suspend user
      */
-    function suspendUser(string memory userId) 
-        external onlyPlatformAdmin userExists(userId) returns (bool) {
+    function suspendUser(
+        string memory userId
+    ) external onlyPlatformAdmin userExists(userId) returns (bool) {
         users[userId].status = UserStatus.SUSPENDED;
         return true;
     }
@@ -355,8 +406,9 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Activate user
      */
-    function activateUser(string memory userId) 
-        external onlyPlatformAdmin userExists(userId) returns (bool) {
+    function activateUser(
+        string memory userId
+    ) external onlyPlatformAdmin userExists(userId) returns (bool) {
         users[userId].status = UserStatus.ACTIVE;
         return true;
     }
@@ -366,48 +418,54 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Get member status
      */
-    function getMemberStatus(string memory memberGIC) 
-        external view memberExists(memberGIC) returns (uint8) {
+    function getMemberStatus(
+        string memory memberGIC
+    ) external view memberExists(memberGIC) returns (uint8) {
         return uint8(members[memberGIC].status);
     }
 
     /**
      * @dev Get member details
      */
-    function getMemberDetails(string memory memberGIC) 
-        external view memberExists(memberGIC) returns (Member memory) {
+    function getMemberDetails(
+        string memory memberGIC
+    ) external view memberExists(memberGIC) returns (Member memory) {
         return members[memberGIC];
     }
 
     /**
      * @dev Get user status
      */
-    function getUserStatus(string memory userId) 
-        external view userExists(userId) returns (uint8) {
+    function getUserStatus(
+        string memory userId
+    ) external view userExists(userId) returns (uint8) {
         return uint8(users[userId].status);
     }
 
     /**
      * @dev Get user details
      */
-    function getUserDetails(string memory userId) 
-        external view userExists(userId) returns (User memory) {
+    function getUserDetails(
+        string memory userId
+    ) external view userExists(userId) returns (User memory) {
         return users[userId];
     }
 
     /**
      * @dev Validate permission (member active + has role + user authorized)
      */
-    function validatePermission(address member, uint256 role) 
-        external view returns (bool) {
+    function validatePermission(
+        address member,
+        uint256 role
+    ) external view returns (bool) {
         string memory memberGIC = addressToMemberGIC[member];
-        
+
         if (bytes(memberGIC).length == 0) {
             return false;
         }
 
         Member memory m = members[memberGIC];
-        
+
         if (m.status != MemberStatus.ACTIVE) {
             return false;
         }
@@ -432,11 +490,15 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Link address to member (no member existence check for bootstrap)
      */
-    function linkAddressToMember(address addr, string memory memberGIC) 
-        external returns (bool) {
+    function linkAddressToMember(
+        address addr,
+        string memory memberGIC
+    ) external returns (bool) {
         // Allow owner to link addresses during bootstrap
-        require(msg.sender == owner() || isMemberInRole(msg.sender, ROLE_PLATFORM), 
-                "Not authorized: PLATFORM role required");
+        require(
+            msg.sender == owner() || isMemberInRole(msg.sender, ROLE_PLATFORM),
+            "Not authorized: PLATFORM role required"
+        );
         addressToMemberGIC[addr] = memberGIC;
         return true;
     }

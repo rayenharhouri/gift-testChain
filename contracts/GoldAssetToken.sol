@@ -6,8 +6,23 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 interface IMemberRegistry {
-    function isMemberInRole(address member, uint256 role) external view returns (bool);
-    function getMemberStatus(string memory memberGIC) external view returns (uint8);
+    function isMemberInRole(
+        address member,
+        uint256 role
+    ) external view returns (bool);
+
+    function getMemberStatus(
+        string memory memberGIC
+    ) external view returns (uint8);
+}
+
+interface IGoldAccountLedger {
+    function updateBalance(
+        string memory igan,
+        int256 delta,
+        string memory reason,
+        uint256 tokenId
+    ) external;
 }
 
 contract GoldAssetToken is ERC1155, Ownable {
@@ -54,11 +69,16 @@ contract GoldAssetToken is ERC1155, Ownable {
 
     // State variables
     IMemberRegistry public memberRegistry;
+    IGoldAccountLedger public accountLedger;
     uint256 private _tokenIdCounter;
-    
+
     mapping(uint256 => GoldAsset) public assets;
     mapping(bytes32 => bool) private _registeredAssets;
     mapping(uint256 => address) public assetOwner;
+    mapping(string => bool) private _usedWarrants;
+    mapping(string => uint256) public warrantToToken;
+    mapping(address => bool) public whitelist;
+    mapping(address => bool) public blacklist;
 
     // Events
     event AssetMinted(
@@ -103,28 +123,66 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 timestamp
     );
 
+    event WarrantLinked(
+        string indexed warrantId,
+        uint256 indexed tokenId,
+        address indexed owner,
+        uint256 timestamp
+    );
+
+    event OwnershipUpdated(
+        uint256 indexed tokenId,
+        address indexed from,
+        address indexed to,
+        string reason,
+        uint256 timestamp
+    );
+
+    event WhitelistUpdated(
+        address indexed account,
+        bool status,
+        uint256 timestamp
+    );
+
+    event BlacklistUpdated(
+        address indexed account,
+        bool status,
+        uint256 timestamp
+    );
+
     // Modifiers
     modifier onlyRefiner() {
-        require(memberRegistry.isMemberInRole(msg.sender, ROLE_REFINER), "Not authorized: REFINER role required");
+        require(
+            memberRegistry.isMemberInRole(msg.sender, ROLE_REFINER),
+            "Not authorized: REFINER role required"
+        );
         _;
     }
 
     modifier onlyOwnerOrCustodian(uint256 tokenId) {
         require(
-            assetOwner[tokenId] == msg.sender || memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
+            assetOwner[tokenId] == msg.sender ||
+                memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
             "Not authorized: Owner or CUSTODIAN role required"
         );
         _;
     }
 
     modifier onlyAdmin() {
-        require(memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM), "Not authorized: PLATFORM role required");
+        require(
+            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
+            "Not authorized: PLATFORM role required"
+        );
         _;
     }
 
     // Constructor
-    constructor(address _memberRegistry) ERC1155("") Ownable(msg.sender) {
+    constructor(
+        address _memberRegistry,
+        address _accountLedger
+    ) ERC1155("") Ownable(msg.sender) {
         memberRegistry = IMemberRegistry(_memberRegistry);
+        accountLedger = IGoldAccountLedger(_accountLedger);
         _tokenIdCounter = 1;
     }
 
@@ -141,6 +199,7 @@ contract GoldAssetToken is ERC1155, Ownable {
      * @param certificateHash SHA-256 hash of authenticity certificate
      * @param traceabilityGIC GIC of introducing member
      * @param certified LBMA certification flag
+     * @param warrantId Unique warrant identifier
      */
     function mint(
         address to,
@@ -151,22 +210,23 @@ contract GoldAssetToken is ERC1155, Ownable {
         GoldProductType productType,
         bytes32 certificateHash,
         string memory traceabilityGIC,
-        bool certified
+        bool certified,
+        string memory warrantId
     ) external onlyRefiner returns (uint256) {
-        // Enforce uniqueness
+        require(!_usedWarrants[warrantId], "Warrant already used");
+        _usedWarrants[warrantId] = true;
+
         bytes32 assetKey = _assetKey(serialNumber, refinerName);
         require(!_registeredAssets[assetKey], "Asset already registered");
         _registeredAssets[assetKey] = true;
 
-        // Calculate fine weight
+        uint256 tokenId = _tokenIdCounter++;
         uint256 fineWeightGrams = (weightGrams * fineness) / 10000;
 
-        // Create asset
-        uint256 tokenId = _tokenIdCounter;
-        _tokenIdCounter++;
-
-        GoldAsset memory asset = GoldAsset({
-            tokenId: string(abi.encodePacked("GIFT-ASSET-", tokenId.toString())),
+        assets[tokenId] = GoldAsset({
+            tokenId: string(
+                abi.encodePacked("GIFT-ASSET-", tokenId.toString())
+            ),
             serialNumber: serialNumber,
             refinerName: refinerName,
             weightGrams: weightGrams,
@@ -180,10 +240,8 @@ contract GoldAssetToken is ERC1155, Ownable {
             certified: certified
         });
 
-        assets[tokenId] = asset;
         assetOwner[tokenId] = to;
-
-        // Mint ERC1155 token (amount = 1 for NFT behavior)
+        warrantToToken[warrantId] = tokenId;
         _mint(to, tokenId, 1, "");
 
         emit AssetMinted(
@@ -195,6 +253,7 @@ contract GoldAssetToken is ERC1155, Ownable {
             to,
             block.timestamp
         );
+        emit WarrantLinked(warrantId, tokenId, to, block.timestamp);
 
         return tokenId;
     }
@@ -202,18 +261,36 @@ contract GoldAssetToken is ERC1155, Ownable {
     /**
      * @dev Burn asset permanently
      * @param tokenId Token ID to burn
+     * @param accountId IGAN account ID
      * @param burnReason Reason for burning
      */
-    function burn(uint256 tokenId, string memory burnReason) external {
-        require(assetOwner[tokenId] == msg.sender || msg.sender == owner(), "Not authorized");
-        require(assets[tokenId].status != AssetStatus.BURNED, "Asset already burned");
+    function burn(
+        uint256 tokenId,
+        string memory accountId,
+        string memory burnReason
+    ) external onlyOwnerOrCustodian(tokenId) {
+        require(assets[tokenId].mintedAt != 0, "Asset does not exist");
+        require(
+            assets[tokenId].status != AssetStatus.BURNED,
+            "Asset already burned"
+        );
 
         address finalOwner = assetOwner[tokenId];
         assets[tokenId].status = AssetStatus.BURNED;
 
+        if (address(accountLedger) != address(0)) {
+            accountLedger.updateBalance(accountId, -1, burnReason, tokenId);
+        }
+
         _burn(finalOwner, tokenId, 1);
 
-        emit AssetBurned(tokenId, burnReason, finalOwner, msg.sender, block.timestamp);
+        emit AssetBurned(
+            tokenId,
+            burnReason,
+            finalOwner,
+            msg.sender,
+            block.timestamp
+        );
     }
 
     /**
@@ -227,12 +304,22 @@ contract GoldAssetToken is ERC1155, Ownable {
         AssetStatus newStatus,
         string memory reason
     ) external onlyOwnerOrCustodian(tokenId) {
-        require(assets[tokenId].status != AssetStatus.BURNED, "Cannot update burned asset");
-        
+        require(
+            assets[tokenId].status != AssetStatus.BURNED,
+            "Cannot update burned asset"
+        );
+
         AssetStatus previousStatus = assets[tokenId].status;
         assets[tokenId].status = newStatus;
 
-        emit AssetStatusChanged(tokenId, previousStatus, newStatus, reason, msg.sender, block.timestamp);
+        emit AssetStatusChanged(
+            tokenId,
+            previousStatus,
+            newStatus,
+            reason,
+            msg.sender,
+            block.timestamp
+        );
     }
 
     /**
@@ -247,7 +334,13 @@ contract GoldAssetToken is ERC1155, Ownable {
         string memory custodyType
     ) external onlyOwnerOrCustodian(tokenId) {
         address fromParty = assetOwner[tokenId];
-        emit CustodyChanged(tokenId, fromParty, toParty, custodyType, block.timestamp);
+        emit CustodyChanged(
+            tokenId,
+            fromParty,
+            toParty,
+            custodyType,
+            block.timestamp
+        );
     }
 
     // Query Functions
@@ -255,7 +348,9 @@ contract GoldAssetToken is ERC1155, Ownable {
     /**
      * @dev Get complete asset details
      */
-    function getAssetDetails(uint256 tokenId) external view returns (GoldAsset memory) {
+    function getAssetDetails(
+        uint256 tokenId
+    ) external view returns (GoldAsset memory) {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         return assets[tokenId];
     }
@@ -263,10 +358,14 @@ contract GoldAssetToken is ERC1155, Ownable {
     /**
      * @dev Get all assets owned by address
      */
-    function getAssetsByOwner(address owner) external view returns (uint256[] memory) {
+    function getAssetsByOwner(
+        address owner
+    ) external view returns (uint256[] memory) {
         uint256 count = 0;
         for (uint256 i = 1; i < _tokenIdCounter; i++) {
-            if (assetOwner[i] == owner && assets[i].status != AssetStatus.BURNED) {
+            if (
+                assetOwner[i] == owner && assets[i].status != AssetStatus.BURNED
+            ) {
                 count++;
             }
         }
@@ -274,7 +373,9 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256[] memory result = new uint256[](count);
         uint256 index = 0;
         for (uint256 i = 1; i < _tokenIdCounter; i++) {
-            if (assetOwner[i] == owner && assets[i].status != AssetStatus.BURNED) {
+            if (
+                assetOwner[i] == owner && assets[i].status != AssetStatus.BURNED
+            ) {
                 result[index] = i;
                 index++;
             }
@@ -287,13 +388,18 @@ contract GoldAssetToken is ERC1155, Ownable {
      */
     function isAssetLocked(uint256 tokenId) external view returns (bool) {
         AssetStatus status = assets[tokenId].status;
-        return status == AssetStatus.PLEDGED || status == AssetStatus.IN_TRANSIT;
+        return
+            status == AssetStatus.PLEDGED || status == AssetStatus.IN_TRANSIT;
     }
 
     /**
      * @dev Verify certificate hash
      */
-    function verifyCertificate(uint256 tokenId, bytes32 certificateHash) external view returns (bool) {
+    function verifyCertificate(
+        uint256 tokenId,
+        bytes32 certificateHash
+    ) external view returns (bool) {
+        require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         return assets[tokenId].certificateHash == certificateHash;
     }
 
@@ -302,8 +408,10 @@ contract GoldAssetToken is ERC1155, Ownable {
     /**
      * @dev Generate composite key for duplicate prevention
      */
-    function _assetKey(string memory serialNumber, string memory refinerName) 
-        private pure returns (bytes32) {
+    function _assetKey(
+        string memory serialNumber,
+        string memory refinerName
+    ) private pure returns (bytes32) {
         return keccak256(abi.encodePacked(serialNumber, refinerName));
     }
 
@@ -316,9 +424,162 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
+     * @dev Force transfer for compliance
+     */
+    function forceTransfer(
+        uint256 tokenId,
+        address from,
+        address to,
+        string memory reason
+    ) external onlyAdmin {
+        require(assets[tokenId].mintedAt != 0, "Asset does not exist");
+        require(assetOwner[tokenId] == from, "Invalid from address");
+        require(to != address(0), "Invalid to address");
+        require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
+
+        _safeTransferFrom(from, to, tokenId, 1, "");
+
+        emit OwnershipUpdated(tokenId, from, to, reason, block.timestamp);
+    }
+
+    /**
+     * @dev Add address to whitelist
+     */
+    function addToWhitelist(address account) external onlyAdmin {
+        whitelist[account] = true;
+        emit WhitelistUpdated(account, true, block.timestamp);
+    }
+
+    /**
+     * @dev Remove address from whitelist
+     */
+    function removeFromWhitelist(address account) external onlyAdmin {
+        whitelist[account] = false;
+        emit WhitelistUpdated(account, false, block.timestamp);
+    }
+
+    /**
+     * @dev Add address to blacklist
+     */
+    function addToBlacklist(address account) external onlyAdmin {
+        blacklist[account] = true;
+        emit BlacklistUpdated(account, true, block.timestamp);
+    }
+
+    /**
+     * @dev Remove address from blacklist
+     */
+    function removeFromBlacklist(address account) external onlyAdmin {
+        blacklist[account] = false;
+        emit BlacklistUpdated(account, false, block.timestamp);
+    }
+
+    /**
+     * @dev Check if warrant is used
+     */
+    function isWarrantUsed(
+        string memory warrantId
+    ) external view returns (bool) {
+        return _usedWarrants[warrantId];
+    }
+
+    /**
+     * @dev Get token by warrant
+     */
+    function getTokenByWarrant(
+        string memory warrantId
+    ) external view returns (uint256) {
+        require(_usedWarrants[warrantId], "Warrant not used");
+        return warrantToToken[warrantId];
+    }
+
+    /**
+     * @dev Override transfer to enforce whitelist/blacklist, keep assetOwner in sync,
+     *      and emit business OwnershipUpdated on normal transfers.
+     */
+    function _update(
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory values
+    ) internal virtual override {
+        bool isNormalTransfer = (from != address(0) && to != address(0));
+        bool isForceTransfer = false;
+
+        if (isNormalTransfer) {
+            isForceTransfer = memberRegistry.isMemberInRole(
+                msg.sender,
+                ROLE_PLATFORM
+            );
+
+            if (!isForceTransfer) {
+                require(
+                    whitelist[from] && whitelist[to],
+                    "Transfer not whitelisted"
+                );
+                require(
+                    !blacklist[from] && !blacklist[to],
+                    "Address blacklisted"
+                );
+            }
+        }
+
+        super._update(from, to, ids, values);
+
+        // Sync business ownership mapping + emit business transfer event
+        for (uint256 i = 0; i < ids.length; i++) {
+            // MVP assumption: amount is 1 per asset tokenId
+            if (values[i] == 1) {
+                uint256 tokenId = ids[i];
+
+                // Block transfers when the asset is locked (pledged or in transit)
+                // (applies to normal transfers; mint/burn are not blocked here)
+                if (isNormalTransfer) {
+                    AssetStatus status = assets[tokenId].status;
+                    require(
+                        status != AssetStatus.PLEDGED &&
+                            status != AssetStatus.IN_TRANSIT,
+                        "Asset locked"
+                    );
+                }
+
+                if (from == address(0) && to != address(0)) {
+                    // mint
+                    assetOwner[tokenId] = to;
+                } else if (from != address(0) && to == address(0)) {
+                    // burn
+                    assetOwner[tokenId] = address(0);
+                } else if (isNormalTransfer) {
+                    // normal transfer
+                    address prevOwner = assetOwner[tokenId];
+                    assetOwner[tokenId] = to;
+
+                    // Emit only for standard transfers (forceTransfer already emits)
+                    if (!isForceTransfer) {
+                        emit OwnershipUpdated(
+                            tokenId,
+                            prevOwner,
+                            to,
+                            "TRANSFER",
+                            block.timestamp
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * @dev Set MemberRegistry address (admin only)
      */
     function setMemberRegistry(address _memberRegistry) external onlyOwner {
         memberRegistry = IMemberRegistry(_memberRegistry);
+    }
+
+    /**
+     * @dev Set AccountLedger address (admin only)
+     */
+    function setAccountLedger(address _accountLedger) external onlyOwner {
+        accountLedger = IGoldAccountLedger(_accountLedger);
     }
 }
