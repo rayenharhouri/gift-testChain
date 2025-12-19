@@ -2,16 +2,16 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "./Interfaces/IMemberRegistry.sol";
 
-interface IMemberRegistry {
-    function isMemberInRole(address member, uint256 role) external view returns (bool);
-    function getMemberStatus(string memory memberGIC) external view returns (uint8);
-}
 
 contract GoldAccountLedger is Ownable {
-    
-    uint256 constant ROLE_PLATFORM = 1 << 6;
+
+    uint256 constant ROLE_PLATFORM  = 1 << 6;
     uint256 constant ROLE_CUSTODIAN = 1 << 2;
+
+    // MemberStatus enum in MemberRegistry: PENDING=0, ACTIVE=1, ...
+    uint8 constant MEMBER_ACTIVE = 1;
 
     struct Account {
         string igan;
@@ -24,17 +24,15 @@ contract GoldAccountLedger is Ownable {
 
     IMemberRegistry public memberRegistry;
     uint256 private _accountCounter;
-    
+
     mapping(string => Account) public accounts;
     mapping(string => string[]) public memberAccounts;
     mapping(address => string[]) public addressAccounts;
 
-    event AccountCreated(
-        string indexed igan,
-        string indexed memberGIC,
-        address indexed ownerAddress,
-        uint256 timestamp
-    );
+    // US-10 prep: only validated contracts can adjust balances
+    mapping(address => bool) public balanceUpdaters;
+
+    event AccountCreated(string indexed igan, string indexed memberGIC, address indexed ownerAddress, uint256 timestamp);
 
     event BalanceUpdated(
         string indexed igan,
@@ -45,6 +43,8 @@ contract GoldAccountLedger is Ownable {
         uint256 timestamp
     );
 
+    event BalanceUpdaterSet(address indexed updater, bool allowed, uint256 timestamp);
+
     modifier onlyPlatform() {
         require(memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM), "Not authorized: PLATFORM role required");
         _;
@@ -52,10 +52,15 @@ contract GoldAccountLedger is Ownable {
 
     modifier onlyAuthorized() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM) || 
+            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM) ||
             memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
             "Not authorized"
         );
+        _;
+    }
+
+    modifier onlyBalanceUpdater() {
+        require(balanceUpdaters[msg.sender], "Not authorized: updater");
         _;
     }
 
@@ -64,10 +69,25 @@ contract GoldAccountLedger is Ownable {
         _accountCounter = 1000;
     }
 
-    function createAccount(string memory memberGIC, address ownerAddress) 
-        external onlyPlatform returns (string memory) {
+    /**
+     * @dev Allow PLATFORM to approve which contracts can call updateBalanceFromContract()
+     */
+    function setBalanceUpdater(address updater, bool allowed) external onlyPlatform {
+        require(updater != address(0), "Invalid updater");
+        balanceUpdaters[updater] = allowed;
+        emit BalanceUpdaterSet(updater, allowed, block.timestamp);
+    }
+
+    function createAccount(string memory memberGIC, address ownerAddress)
+        external
+        onlyPlatform
+        returns (string memory)
+    {
         require(bytes(memberGIC).length > 0, "Invalid memberGIC");
         require(ownerAddress != address(0), "Invalid address");
+
+        // ✅ Step 1: require member ACTIVE (uses your existing IMemberRegistry function)
+        require(memberRegistry.getMemberStatus(memberGIC) == MEMBER_ACTIVE, "Member not active");
 
         string memory igan = string(abi.encodePacked("IGAN-", _uint2str(_accountCounter)));
         _accountCounter++;
@@ -89,14 +109,41 @@ contract GoldAccountLedger is Ownable {
         return igan;
     }
 
+    /**
+     * @dev MVP/admin path (kept): PLATFORM or CUSTODIAN can adjust balances.
+     * For US-10 strict mode, you can later restrict/remove this and use updateBalanceFromContract().
+     */
     function updateBalance(
         string memory igan,
         int256 delta,
         string memory reason,
         uint256 tokenId
     ) external onlyAuthorized {
+        _updateBalanceInternal(igan, delta, reason, tokenId);
+    }
+
+    /**
+     * @dev US-10 path: only validated smart contracts can adjust balances
+     */
+    function updateBalanceFromContract(
+        string memory igan,
+        int256 delta,
+        string memory reason,
+        uint256 tokenId
+    ) external onlyBalanceUpdater {
+        _updateBalanceInternal(igan, delta, reason, tokenId);
+    }
+
+    function _updateBalanceInternal(
+        string memory igan,
+        int256 delta,
+        string memory reason,
+        uint256 tokenId
+    ) internal {
+        // ✅ Step 3: clear existence vs active errors
+        require(accounts[igan].createdAt != 0, "Account does not exist");
         require(accounts[igan].active, "Account not active");
-        
+
         if (delta < 0) {
             require(accounts[igan].balance >= uint256(-delta), "Insufficient balance");
             accounts[igan].balance -= uint256(-delta);
@@ -108,6 +155,7 @@ contract GoldAccountLedger is Ownable {
     }
 
     function getAccountBalance(string memory igan) external view returns (uint256) {
+        require(accounts[igan].createdAt != 0, "Account does not exist");
         return accounts[igan].balance;
     }
 
@@ -128,17 +176,13 @@ contract GoldAccountLedger is Ownable {
         if (_i == 0) return "0";
         uint256 j = _i;
         uint256 len;
-        while (j != 0) {
-            len++;
-            j /= 10;
-        }
+        while (j != 0) { len++; j /= 10; }
         bytes memory bstr = new bytes(len);
         uint256 k = len;
         while (_i != 0) {
-            k = k-1;
+            k = k - 1;
             uint8 temp = (48 + uint8(_i - _i / 10 * 10));
-            bytes1 b1 = bytes1(temp);
-            bstr[k] = b1;
+            bstr[k] = bytes1(temp);
             _i /= 10;
         }
         return string(bstr);

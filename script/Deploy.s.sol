@@ -8,9 +8,9 @@ import "../contracts/GoldAccountLedger.sol";
 
 contract DeployGIFT is Script {
     function run() external {
-        // Read private key from environment (with or without 0x prefix)
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        
+        address deployer = vm.addr(deployerPrivateKey);
+
         vm.startBroadcast(deployerPrivateKey);
 
         // Deploy MemberRegistry

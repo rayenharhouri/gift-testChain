@@ -4,17 +4,9 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "./Interfaces/IMemberRegistry.sol";
 
-interface IMemberRegistry {
-    function isMemberInRole(
-        address member,
-        uint256 role
-    ) external view returns (bool);
 
-    function getMemberStatus(
-        string memory memberGIC
-    ) external view returns (uint8);
-}
 
 interface IGoldAccountLedger {
     function updateBalance(
