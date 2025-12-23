@@ -14,6 +14,13 @@ contract GoldAccountLedgerTest is Test {
     address public user1     = address(3);
     address public updater   = address(9);
 
+    // Common params for account creation
+    string constant VAULT_SITE_ID  = "VS-001";
+    string constant GUARANTEE_ACC  = "GDA-2025-00001";
+    string constant PURPOSE        = "trading";
+    uint256 constant INITIAL_DEP   = 0;
+    string constant CERT_ABSENCE   = "";
+
     function setUp() public {
         vm.startPrank(platform);
 
@@ -21,7 +28,7 @@ contract GoldAccountLedgerTest is Test {
         registry = new MemberRegistry();
         ledger = new GoldAccountLedger(address(registry));
 
-        // Register members used by tests (so createAccount passes "Member not active")
+        // Register members used by tests
         registry.registerMember(
             "MEMBER-001",
             MemberRegistry.MemberType.COMPANY,
@@ -44,9 +51,17 @@ contract GoldAccountLedgerTest is Test {
 
     function testCreateAccount() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
-        // First generated IGAN should start at 1000
         assertEq(igan, "IGAN-1000");
         assertEq(ledger.getAccountBalance(igan), 0);
     }
@@ -54,8 +69,26 @@ contract GoldAccountLedgerTest is Test {
     function testCreateAccount_IncrementsIGAN() public {
         vm.startPrank(platform);
 
-        string memory a1 = ledger.createAccount("MEMBER-001", user1);
-        string memory a2 = ledger.createAccount("MEMBER-001", user1);
+        string memory a1 = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
+        string memory a2 = ledger.createAccount(
+            "IGAN-1001",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.stopPrank();
 
@@ -78,7 +111,16 @@ contract GoldAccountLedgerTest is Test {
         registry.suspendMember("MEMBER-002", "test suspend");
 
         vm.expectRevert("Member not active");
-        ledger.createAccount("MEMBER-002", user1);
+        ledger.createAccount(
+            "IGAN-2000",
+            "MEMBER-002",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.stopPrank();
     }
@@ -86,12 +128,30 @@ contract GoldAccountLedgerTest is Test {
     function testUnauthorizedCannotCreateAccount() public {
         vm.prank(user1);
         vm.expectRevert("Not authorized: PLATFORM role required");
-        ledger.createAccount("MEMBER-001", user1);
+        ledger.createAccount(
+            "IGAN-3000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
     }
 
     function testUpdateBalance_ByPlatform() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(platform);
         ledger.updateBalance(igan, 10, "mint", 1);
@@ -101,7 +161,16 @@ contract GoldAccountLedgerTest is Test {
 
     function testCustodianCanUpdateBalance() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(custodian);
         ledger.updateBalance(igan, 5, "adjustment", 1);
@@ -111,7 +180,16 @@ contract GoldAccountLedgerTest is Test {
 
     function testUpdateBalance_RevertsIfNotAuthorized() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(user1);
         vm.expectRevert("Not authorized");
@@ -120,7 +198,16 @@ contract GoldAccountLedgerTest is Test {
 
     function testUpdateBalance_NegativeDelta_RevertsIfInsufficient() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(platform);
         vm.expectRevert("Insufficient balance");
@@ -151,7 +238,16 @@ contract GoldAccountLedgerTest is Test {
 
     function testUpdateBalanceFromContract_RevertsIfNotUpdater() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(updater);
         vm.expectRevert("Not authorized: updater");
@@ -160,7 +256,16 @@ contract GoldAccountLedgerTest is Test {
 
     function testUpdateBalanceFromContract_WorksWhenUpdaterAllowed() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(platform);
         ledger.setBalanceUpdater(updater, true);
@@ -174,8 +279,26 @@ contract GoldAccountLedgerTest is Test {
     function testGetAccountsByMember() public {
         vm.startPrank(platform);
 
-        ledger.createAccount("MEMBER-001", user1);
-        ledger.createAccount("MEMBER-001", user1);
+        ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
+        ledger.createAccount(
+            "IGAN-1001",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         string[] memory accounts = ledger.getAccountsByMember("MEMBER-001");
         assertEq(accounts.length, 2);
@@ -186,30 +309,77 @@ contract GoldAccountLedgerTest is Test {
     function testGetAccountsByAddress() public {
         vm.startPrank(platform);
 
-        ledger.createAccount("MEMBER-001", user1);
-        ledger.createAccount("MEMBER-001", user1);
+        ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
+        ledger.createAccount(
+            "IGAN-1001",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         string[] memory accounts = ledger.getAccountsByAddress(user1);
         assertEq(accounts.length, 2);
 
         vm.stopPrank();
     }
-        function test_Event_AccountCreated() public {
+
+    function test_Event_AccountCreated() public {
         uint256 t = 111;
         vm.warp(t);
 
         vm.expectEmit(true, true, true, true);
-        emit GoldAccountLedger.AccountCreated("IGAN-1000", "MEMBER-001", user1, t);
+        emit GoldAccountLedger.AccountCreated(
+            "IGAN-1000",
+            "MEMBER-001",
+            user1,
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            t
+        );
 
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         assertEq(igan, "IGAN-1000");
     }
 
     function test_Event_BalanceUpdated_Platform() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         uint256 t = 222;
         vm.warp(t);
@@ -223,7 +393,16 @@ contract GoldAccountLedgerTest is Test {
 
     function test_Event_BalanceUpdated_NegativeDelta() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         // Seed balance
         vm.prank(platform);
@@ -252,7 +431,16 @@ contract GoldAccountLedgerTest is Test {
 
     function test_Event_BalanceUpdated_FromContractUpdater() public {
         vm.prank(platform);
-        string memory igan = ledger.createAccount("MEMBER-001", user1);
+        string memory igan = ledger.createAccount(
+            "IGAN-1000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
 
         vm.prank(platform);
         ledger.setBalanceUpdater(updater, true);
@@ -266,5 +454,4 @@ contract GoldAccountLedgerTest is Test {
         vm.prank(updater);
         ledger.updateBalanceFromContract(igan, 7, "mint", 1);
     }
-
 }

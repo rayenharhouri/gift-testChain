@@ -1,1 +1,1 @@
-test_VerifyCertificate_NonExistentToken_ZeroHashEdgeCase
+testCreateAccount_RevertsIfMemberNotActive

@@ -4,20 +4,21 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./Interfaces/IMemberRegistry.sol";
 
-
 contract GoldAccountLedger is Ownable {
-
-    uint256 constant ROLE_PLATFORM  = 1 << 6;
+    uint256 constant ROLE_PLATFORM = 1 << 6;
     uint256 constant ROLE_CUSTODIAN = 1 << 2;
-
-    // MemberStatus enum in MemberRegistry: PENDING=0, ACTIVE=1, ...
     uint8 constant MEMBER_ACTIVE = 1;
 
     struct Account {
         string igan;
-        string memberGIC;
-        address ownerAddress;
-        uint256 balance;
+        string memberGIC; // owner member
+        address ownerAddress; // wallet that operates the account
+        string vaultSiteId; // vault_site_id
+        string guaranteeDepositAccount; // guarantee_deposit_account
+        string goldAccountPurpose; // gold_account_purpose: 'trading', 'custody', 'collateral', 'savings'
+        uint256 initialDeposit; // initial_deposit (fiat/off-chain amount, just stored)
+        string certificateAbsenceReason; // certificate_absence_reason
+        uint256 balance; // gold balance (tokens/units)
         uint256 createdAt;
         bool active;
     }
@@ -32,7 +33,17 @@ contract GoldAccountLedger is Ownable {
     // US-10 prep: only validated contracts can adjust balances
     mapping(address => bool) public balanceUpdaters;
 
-    event AccountCreated(string indexed igan, string indexed memberGIC, address indexed ownerAddress, uint256 timestamp);
+    event AccountCreated(
+        string indexed igan,
+        string indexed memberGIC,
+        address indexed ownerAddress,
+        string vaultSiteId,
+        string guaranteeDepositAccount,
+        string goldAccountPurpose,
+        uint256 initialDeposit,
+        string certificateAbsenceReason,
+        uint256 timestamp
+    );
 
     event BalanceUpdated(
         string indexed igan,
@@ -43,17 +54,24 @@ contract GoldAccountLedger is Ownable {
         uint256 timestamp
     );
 
-    event BalanceUpdaterSet(address indexed updater, bool allowed, uint256 timestamp);
+    event BalanceUpdaterSet(
+        address indexed updater,
+        bool allowed,
+        uint256 timestamp
+    );
 
     modifier onlyPlatform() {
-        require(memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM), "Not authorized: PLATFORM role required");
+        require(
+            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
+            "Not authorized: PLATFORM role required"
+        );
         _;
     }
 
     modifier onlyAuthorized() {
         require(
             memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM) ||
-            memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
+                memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
             "Not authorized"
         );
         _;
@@ -72,31 +90,51 @@ contract GoldAccountLedger is Ownable {
     /**
      * @dev Allow PLATFORM to approve which contracts can call updateBalanceFromContract()
      */
-    function setBalanceUpdater(address updater, bool allowed) external onlyPlatform {
+    function setBalanceUpdater(
+        address updater,
+        bool allowed
+    ) external onlyPlatform {
         require(updater != address(0), "Invalid updater");
         balanceUpdaters[updater] = allowed;
         emit BalanceUpdaterSet(updater, allowed, block.timestamp);
     }
 
-    function createAccount(string memory memberGIC, address ownerAddress)
-        external
-        onlyPlatform
-        returns (string memory)
-    {
+    function createAccount(
+        string memory igan,
+        string memory memberGIC,
+        string memory vaultSiteId,
+        string memory guaranteeDepositAccount,
+        string memory goldAccountPurpose,
+        uint256 initialDeposit,
+        string memory certificateAbsenceReason,
+        address ownerAddress
+    ) external onlyPlatform returns (string memory) {
+        require(bytes(igan).length > 0, "Invalid IGAN");
         require(bytes(memberGIC).length > 0, "Invalid memberGIC");
+        uint8 status = memberRegistry.getMemberStatus(memberGIC);
+        require(status == MEMBER_ACTIVE, "Member not active");
+        require(bytes(vaultSiteId).length > 0, "Invalid vault site");
+        require(
+            bytes(guaranteeDepositAccount).length > 0,
+            "Invalid guarantee deposit account"
+        );
+        require(
+            bytes(goldAccountPurpose).length > 0,
+            "Invalid account purpose"
+        );
         require(ownerAddress != address(0), "Invalid address");
-
-        // ✅ Step 1: require member ACTIVE (uses your existing IMemberRegistry function)
-        require(memberRegistry.getMemberStatus(memberGIC) == MEMBER_ACTIVE, "Member not active");
-
-        string memory igan = string(abi.encodePacked("IGAN-", _uint2str(_accountCounter)));
-        _accountCounter++;
+        require(accounts[igan].createdAt == 0, "Account already exists");
 
         Account memory newAccount = Account({
             igan: igan,
             memberGIC: memberGIC,
             ownerAddress: ownerAddress,
-            balance: 0,
+            vaultSiteId: vaultSiteId,
+            guaranteeDepositAccount: guaranteeDepositAccount,
+            goldAccountPurpose: goldAccountPurpose,
+            initialDeposit: initialDeposit,
+            certificateAbsenceReason: certificateAbsenceReason,
+            balance: 0, // gold balance starts at 0
             createdAt: block.timestamp,
             active: true
         });
@@ -105,7 +143,18 @@ contract GoldAccountLedger is Ownable {
         memberAccounts[memberGIC].push(igan);
         addressAccounts[ownerAddress].push(igan);
 
-        emit AccountCreated(igan, memberGIC, ownerAddress, block.timestamp);
+        emit AccountCreated(
+            igan,
+            memberGIC,
+            ownerAddress,
+            vaultSiteId,
+            guaranteeDepositAccount,
+            goldAccountPurpose,
+            initialDeposit,
+            certificateAbsenceReason,
+            block.timestamp
+        );
+
         return igan;
     }
 
@@ -140,34 +189,52 @@ contract GoldAccountLedger is Ownable {
         string memory reason,
         uint256 tokenId
     ) internal {
-        // ✅ Step 3: clear existence vs active errors
+        // Step 3: clear existence vs active errors
         require(accounts[igan].createdAt != 0, "Account does not exist");
         require(accounts[igan].active, "Account not active");
 
         if (delta < 0) {
-            require(accounts[igan].balance >= uint256(-delta), "Insufficient balance");
+            require(
+                accounts[igan].balance >= uint256(-delta),
+                "Insufficient balance"
+            );
             accounts[igan].balance -= uint256(-delta);
         } else {
             accounts[igan].balance += uint256(delta);
         }
 
-        emit BalanceUpdated(igan, delta, accounts[igan].balance, reason, tokenId, block.timestamp);
+        emit BalanceUpdated(
+            igan,
+            delta,
+            accounts[igan].balance,
+            reason,
+            tokenId,
+            block.timestamp
+        );
     }
 
-    function getAccountBalance(string memory igan) external view returns (uint256) {
+    function getAccountBalance(
+        string memory igan
+    ) external view returns (uint256) {
         require(accounts[igan].createdAt != 0, "Account does not exist");
         return accounts[igan].balance;
     }
 
-    function getAccountsByMember(string memory memberGIC) external view returns (string[] memory) {
+    function getAccountsByMember(
+        string memory memberGIC
+    ) external view returns (string[] memory) {
         return memberAccounts[memberGIC];
     }
 
-    function getAccountsByAddress(address addr) external view returns (string[] memory) {
+    function getAccountsByAddress(
+        address addr
+    ) external view returns (string[] memory) {
         return addressAccounts[addr];
     }
 
-    function getAccountDetails(string memory igan) external view returns (Account memory) {
+    function getAccountDetails(
+        string memory igan
+    ) external view returns (Account memory) {
         require(accounts[igan].createdAt != 0, "Account does not exist");
         return accounts[igan];
     }
@@ -176,12 +243,15 @@ contract GoldAccountLedger is Ownable {
         if (_i == 0) return "0";
         uint256 j = _i;
         uint256 len;
-        while (j != 0) { len++; j /= 10; }
+        while (j != 0) {
+            len++;
+            j /= 10;
+        }
         bytes memory bstr = new bytes(len);
         uint256 k = len;
         while (_i != 0) {
             k = k - 1;
-            uint8 temp = (48 + uint8(_i - _i / 10 * 10));
+            uint8 temp = (48 + uint8(_i - (_i / 10) * 10));
             bstr[k] = bytes1(temp);
             _i /= 10;
         }
