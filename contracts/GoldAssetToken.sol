@@ -6,10 +6,15 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
 import "./Interfaces/IMemberRegistry.sol";
 
-
-
 interface IGoldAccountLedger {
     function updateBalance(
+        string memory igan,
+        int256 delta,
+        string memory reason,
+        uint256 tokenId
+    ) external;
+
+    function updateBalanceFromContract(
         string memory igan,
         int256 delta,
         string memory reason,
@@ -57,6 +62,8 @@ contract GoldAssetToken is ERC1155, Ownable {
         AssetStatus status;
         uint256 mintedAt;
         bool certified;
+        // NEW: bind this asset permanently to a specific IGAN
+        string igan;
     }
 
     // State variables
@@ -181,20 +188,22 @@ contract GoldAssetToken is ERC1155, Ownable {
     // Core Functions
 
     /**
-     * @dev Mint new gold asset token
-     * @param to Owner address
-     * @param serialNumber Refiner serial number
-     * @param refinerName Refiner/manufacturer name
-     * @param weightGrams Gross weight in grams (scaled by 10^4)
-     * @param fineness Gold purity (9999 = 99.99%)
-     * @param productType BAR, COIN, DUST, OTHER
-     * @param certificateHash SHA-256 hash of authenticity certificate
-     * @param traceabilityGIC GIC of introducing member
-     * @param certified LBMA certification flag
-     * @param warrantId Unique warrant identifier
+     * @dev Mint new gold asset token and credit 1 unit to IGAN in the ledger.
+     * @param to Owner address (wallet that will hold the ERC1155 token).
+     * @param accountId IGAN account ID to be credited (stored on the asset).
+     * @param serialNumber Refiner serial number.
+     * @param refinerName Refiner/manufacturer name.
+     * @param weightGrams Gross weight in grams (scaled by 10^4).
+     * @param fineness Gold purity (9999 = 99.99%).
+     * @param productType BAR, COIN, DUST, OTHER.
+     * @param certificateHash SHA-256 hash of authenticity certificate.
+     * @param traceabilityGIC GIC of introducing member.
+     * @param certified LBMA certification flag.
+     * @param warrantId Unique warrant identifier (one-time use).
      */
     function mint(
         address to,
+        string memory accountId,
         string memory serialNumber,
         string memory refinerName,
         uint256 weightGrams,
@@ -205,6 +214,9 @@ contract GoldAssetToken is ERC1155, Ownable {
         bool certified,
         string memory warrantId
     ) external onlyRefiner returns (uint256) {
+        require(to != address(0), "Invalid owner");
+        require(bytes(accountId).length > 0, "Invalid accountId");
+
         require(!_usedWarrants[warrantId], "Warrant already used");
         _usedWarrants[warrantId] = true;
 
@@ -229,12 +241,26 @@ contract GoldAssetToken is ERC1155, Ownable {
             traceabilityGIC: traceabilityGIC,
             status: AssetStatus.REGISTERED,
             mintedAt: block.timestamp,
-            certified: certified
+            certified: certified,
+            igan: accountId
         });
 
         assetOwner[tokenId] = to;
         warrantToToken[warrantId] = tokenId;
+
         _mint(to, tokenId, 1, "");
+
+        // Strict / coherent path: contract-whitelisted balance update.
+        if (address(accountLedger) != address(0)) {
+            // If GAT is configured as a balance updater, this will pass
+            // GoldAccountLedger.onlyBalanceUpdater.
+            accountLedger.updateBalanceFromContract(
+                accountId,
+                int256(1),
+                "MINT",
+                tokenId
+            );
+        }
 
         emit AssetMinted(
             tokenId,
@@ -251,14 +277,17 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Burn asset permanently
-     * @param tokenId Token ID to burn
-     * @param accountId IGAN account ID
-     * @param burnReason Reason for burning
+     * @dev Burn asset permanently and debit 1 unit from the bound IGAN.
+     * @param tokenId Token ID to burn.
+     * @param accountId Legacy IGAN account ID param (ignored; IGAN is taken from stored asset).
+     * @param burnReason Reason for burning (e.g., redeemed, melted, lost).
+     *
+     * NOTE: accountId is kept for backward ABI compatibility but not trusted.
+     *       The actual IGAN debited comes from assets[tokenId].igan.
      */
     function burn(
         uint256 tokenId,
-        string memory accountId,
+        string memory accountId, // kept for ABI compatibility, ignored
         string memory burnReason
     ) external onlyOwnerOrCustodian(tokenId) {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
@@ -270,8 +299,17 @@ contract GoldAssetToken is ERC1155, Ownable {
         address finalOwner = assetOwner[tokenId];
         assets[tokenId].status = AssetStatus.BURNED;
 
+        // Use the IGAN stored on the asset to ensure coherence.
+        string memory igan = assets[tokenId].igan;
+
         if (address(accountLedger) != address(0)) {
-            accountLedger.updateBalance(accountId, -1, burnReason, tokenId);
+            require(bytes(igan).length > 0, "Missing IGAN for asset");
+            accountLedger.updateBalanceFromContract(
+                igan,
+                -1,
+                burnReason,
+                tokenId
+            );
         }
 
         _burn(finalOwner, tokenId, 1);
@@ -286,10 +324,10 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Update asset status
-     * @param tokenId Token ID
-     * @param newStatus New status
-     * @param reason Reason for status change
+     * @dev Update asset status (cannot modify BURNED assets).
+     * @param tokenId Token ID.
+     * @param newStatus New status.
+     * @param reason Reason for status change.
      */
     function updateStatus(
         uint256 tokenId,
@@ -315,10 +353,10 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Update custody information
-     * @param tokenId Token ID
-     * @param toParty New custodian
-     * @param custodyType Type of custody
+     * @dev Update custody information (off-chain interpretation).
+     * @param tokenId Token ID.
+     * @param toParty New custodian.
+     * @param custodyType Type of custody.
      */
     function updateCustody(
         uint256 tokenId,
@@ -338,7 +376,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     // Query Functions
 
     /**
-     * @dev Get complete asset details
+     * @dev Get complete asset details.
      */
     function getAssetDetails(
         uint256 tokenId
@@ -348,7 +386,8 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Get all assets owned by address
+     * @dev Get all non-burned assets owned by address.
+     *      O(n) scan across tokenId range [1, _tokenIdCounter).
      */
     function getAssetsByOwner(
         address owner
@@ -376,7 +415,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Check if asset is locked
+     * @dev Check if asset is locked (PLEDGED or IN_TRANSIT).
      */
     function isAssetLocked(uint256 tokenId) external view returns (bool) {
         AssetStatus status = assets[tokenId].status;
@@ -385,7 +424,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Verify certificate hash
+     * @dev Verify certificate hash.
      */
     function verifyCertificate(
         uint256 tokenId,
@@ -398,7 +437,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     // Internal Functions
 
     /**
-     * @dev Generate composite key for duplicate prevention
+     * @dev Generate composite key for duplicate prevention.
      */
     function _assetKey(
         string memory serialNumber,
@@ -408,7 +447,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Override URI for metadata
+     * @dev Override URI for metadata.
      */
     function uri(uint256 tokenId) public view override returns (string memory) {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
@@ -416,7 +455,9 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Force transfer for compliance
+     * @dev Force transfer for compliance (PLATFORM only).
+     *      Bypasses whitelist/blacklist, but still respects PLEDGED/IN_TRANSIT
+     *      logic via the overridden _update hook.
      */
     function forceTransfer(
         uint256 tokenId,
@@ -435,7 +476,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Add address to whitelist
+     * @dev Add address to whitelist (admin only).
      */
     function addToWhitelist(address account) external onlyAdmin {
         whitelist[account] = true;
@@ -443,7 +484,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Remove address from whitelist
+     * @dev Remove address from whitelist (admin only).
      */
     function removeFromWhitelist(address account) external onlyAdmin {
         whitelist[account] = false;
@@ -451,7 +492,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Add address to blacklist
+     * @dev Add address to blacklist (admin only).
      */
     function addToBlacklist(address account) external onlyAdmin {
         blacklist[account] = true;
@@ -459,7 +500,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Remove address from blacklist
+     * @dev Remove address from blacklist (admin only).
      */
     function removeFromBlacklist(address account) external onlyAdmin {
         blacklist[account] = false;
@@ -467,7 +508,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Check if warrant is used
+     * @dev Check if warrant is used.
      */
     function isWarrantUsed(
         string memory warrantId
@@ -476,7 +517,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Get token by warrant
+     * @dev Get token by warrant.
      */
     function getTokenByWarrant(
         string memory warrantId
@@ -562,14 +603,15 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Set MemberRegistry address (admin only)
+     * @dev Set MemberRegistry address (contract owner only).
      */
     function setMemberRegistry(address _memberRegistry) external onlyOwner {
+        require(_memberRegistry != address(0), "Invalid registry");
         memberRegistry = IMemberRegistry(_memberRegistry);
     }
 
     /**
-     * @dev Set AccountLedger address (admin only)
+     * @dev Set AccountLedger address (contract owner only).
      */
     function setAccountLedger(address _accountLedger) external onlyOwner {
         accountLedger = IGoldAccountLedger(_accountLedger);

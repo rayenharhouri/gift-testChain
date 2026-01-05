@@ -1,1 +1,1 @@
-testCreateAccount_RevertsIfMemberNotActive
+test_CreateVaultSite_AsPlatform_Succeeds

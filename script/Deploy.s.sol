@@ -5,6 +5,8 @@ import {Script, console} from "forge-std/Script.sol";
 import "../contracts/MemberRegistry.sol";
 import "../contracts/GoldAccountLedger.sol";
 import "../contracts/GoldAssetToken.sol";
+import "../contracts/VaultSiteRegistry.sol";
+import "../contracts/VaultRegistry.sol";
 
 contract DeployGIFT is Script {
     function run() external {
@@ -22,6 +24,15 @@ contract DeployGIFT is Script {
             address(accountLedger)
         );
         console.log("GoldAssetToken:", address(goldAssetToken));
+
+        VaultSiteRegistry vaultSiteRegistry = new VaultSiteRegistry(address(memberRegistry));
+        console.log("VaultSiteRegistry:", address(vaultSiteRegistry));
+
+        VaultRegistry vaultRegistry = new VaultRegistry(
+            address(memberRegistry),
+            address(vaultSiteRegistry)
+        );
+        console.log("VaultRegistry:", address(vaultRegistry));
 
         vm.stopBroadcast();
     }

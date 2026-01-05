@@ -19,19 +19,45 @@ contract MockMemberRegistry {
     }
 
     function getMemberStatus(
-        string memory memberGIC
+        string memory /* memberGIC */
     ) external pure returns (uint8) {
-        return 1; // ACTIVE
+        // Always ACTIVE for tests
+        return 1;
     }
 }
 
 contract MockAccountLedger {
+    struct Call {
+        string igan;
+        int256 delta;
+        string reason;
+        uint256 tokenId;
+    }
+
+    Call[] public calls;
+
+    /// @dev This should NEVER be used by GoldAssetToken in the new design.
     function updateBalance(
+        string memory,
+        int256,
+        string memory,
+        uint256
+    ) external pure {
+        revert("updateBalance should not be used");
+    }
+
+    function updateBalanceFromContract(
         string memory igan,
         int256 delta,
         string memory reason,
         uint256 tokenId
-    ) external {}
+    ) external {
+        calls.push(Call({igan: igan, delta: delta, reason: reason, tokenId: tokenId}));
+    }
+
+    function callsLength() external view returns (uint256) {
+        return calls.length;
+    }
 }
 
 contract GoldAssetTokenTest is Test {
@@ -63,14 +89,16 @@ contract GoldAssetTokenTest is Test {
     }
 
     function test_MintGoldAsset() public {
-        vm.prank(refiner);
+        string memory igan = "IGAN-1000";
 
+        vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            igan,
             "SN123456",
             "Refiner A",
             1000000, // 100 grams (scaled by 10^4)
-            9999, // 99.99% pure
+            9999,    // 99.99% pure
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
@@ -92,12 +120,23 @@ contract GoldAssetTokenTest is Test {
             uint8(asset.status),
             uint8(GoldAssetToken.AssetStatus.REGISTERED)
         );
+        assertEq(asset.igan, igan);
+
+        // Ledger should have one call: +1 MINT for IGAN-1000
+        assertEq(accountLedger.callsLength(), 1);
+        (string memory ledgerIgan, int256 delta, string memory reason, uint256 ledgerTokenId) =
+            accountLedger.calls(0);
+        assertEq(ledgerIgan, igan);
+        assertEq(delta, int256(1));
+        assertEq(reason, "MINT");
+        assertEq(ledgerTokenId, tokenId);
     }
 
     function test_DuplicatePreventionFails() public {
         vm.prank(refiner);
         goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -113,12 +152,13 @@ contract GoldAssetTokenTest is Test {
         vm.expectRevert("Asset already registered");
         goldToken.mint(
             owner,
-            "SN123456",
+            "IGAN-1001",
+            "SN123456", // same serialNumber + refinerName => duplicate
             "Refiner A",
             1000000,
             9999,
             GoldAssetToken.GoldProductType.BAR,
-            keccak256("cert_hash"),
+            keccak256("cert_hash2"),
             "GIFTCHZZ",
             true,
             "WARRANT-002"
@@ -130,6 +170,7 @@ contract GoldAssetTokenTest is Test {
         vm.expectRevert("Not authorized: REFINER role required");
         goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -146,6 +187,7 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -173,10 +215,13 @@ contract GoldAssetTokenTest is Test {
         );
     }
 
-    function test_BurnAsset() public {
+    function test_BurnAsset_UpdatesLedgerWithStoredIgan() public {
+        string memory igan = "IGAN-1000";
+
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            igan,
             "SN123456",
             "Refiner A",
             1000000,
@@ -188,19 +233,33 @@ contract GoldAssetTokenTest is Test {
             "WARRANT-001"
         );
 
+        // one ledger call from mint
+        assertEq(accountLedger.callsLength(), 1);
+
         vm.prank(owner);
-        goldToken.burn(tokenId, "IGAN-1000", "Delivered to customer");
+        // accountId argument is ignored in implementation; IGAN comes from stored asset
+        goldToken.burn(tokenId, "SOME-OTHER-IGAN", "Delivered to customer");
 
         GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
             tokenId
         );
         assertEq(uint8(asset.status), uint8(GoldAssetToken.AssetStatus.BURNED));
+
+        // second ledger call from burn
+        assertEq(accountLedger.callsLength(), 2);
+        (string memory ledgerIgan, int256 delta, string memory reason, uint256 ledgerTokenId) =
+            accountLedger.calls(1);
+        assertEq(ledgerIgan, igan);          // must match stored igan, not the param
+        assertEq(delta, int256(-1));
+        assertEq(reason, "Delivered to customer");
+        assertEq(ledgerTokenId, tokenId);
     }
 
     function test_IsAssetLocked() public {
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -230,6 +289,7 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -251,6 +311,7 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         uint256 tokenId1 = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -265,6 +326,7 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         uint256 tokenId2 = goldToken.mint(
             owner,
+            "IGAN-1001",
             "SN789012",
             "Refiner B",
             500000,
@@ -286,10 +348,11 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             10000, // 1 gram (scaled by 10^4)
-            5000, // 50% pure
+            5000,  // 50% pure
             GoldAssetToken.GoldProductType.BAR,
             keccak256("cert_hash"),
             "GIFTCHZZ",
@@ -300,13 +363,15 @@ contract GoldAssetTokenTest is Test {
         GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
             tokenId
         );
-        assertEq(asset.fineWeightGrams, 5000); // 10000 * 5000 / 10000 = 5000
+        // 10000 * 5000 / 10000 = 5000
+        assertEq(asset.fineWeightGrams, 5000);
     }
 
     function test_WarrantDuplicatePrevention() public {
         vm.prank(refiner);
         goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -322,6 +387,7 @@ contract GoldAssetTokenTest is Test {
         vm.expectRevert("Warrant already used");
         goldToken.mint(
             owner,
+            "IGAN-1001",
             "SN789012",
             "Refiner B",
             1000000,
@@ -338,6 +404,7 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         uint256 tokenId = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -384,6 +451,7 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         tokenId = goldToken.mint(
             owner,
+            "IGAN-1000",
             "SN123456",
             "Refiner A",
             1000000,
@@ -400,7 +468,7 @@ contract GoldAssetTokenTest is Test {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
 
-        // whitelist both sides (required by your _update)
+        // whitelist both sides (required by _update)
         vm.prank(admin);
         goldToken.addToWhitelist(owner);
         vm.prank(admin);
@@ -566,7 +634,7 @@ contract GoldAssetTokenTest is Test {
             "Pledged"
         );
 
-        // With your current _update(), lock check is applied to all normal transfers
+        // With current _update(), lock check is applied to all normal transfers
         // including forceTransfer (because from/to are non-zero).
         vm.prank(admin);
         vm.expectRevert("Asset locked");
@@ -580,9 +648,9 @@ contract GoldAssetTokenTest is Test {
 
     function test_Burn_NonExistentToken_Reverts() public {
         // custodian can pass onlyOwnerOrCustodian even if token doesn't exist,
-        // then the internal ERC1155 burn will revert.
+        // but the function will revert on missing asset.
         vm.prank(custodian);
-        vm.expectRevert(); // message can vary by OZ version
+        vm.expectRevert("Asset does not exist");
         goldToken.burn(999, "IGAN-1000", "Burn non-existent");
     }
 }
