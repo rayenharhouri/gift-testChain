@@ -39,9 +39,11 @@ DEPLOY_OUTPUT=$(PRIVATE_KEY="$PRIVATE_KEY" forge script script/Deploy.s.sol:Depl
 MEMBER_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "MemberRegistry:" | tail -1 | awk '{print $NF}')
 GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | tail -1 | awk '{print $NF}')
 ACCOUNT_LEDGER=$(echo "$DEPLOY_OUTPUT" | grep "GoldAccountLedger:" | tail -1 | awk '{print $NF}')
+vaultSiteRegistry=$(echo "$DEPLOY_OUTPUT" | grep "vaultSiteRegistry:" | tail -1 | awk '{print $NF}')
+VaultRegistry=$(echo "$DEPLOY_OUTPUT" | grep "VaultRegistry:" | tail -1 | awk '{print $NF}')
 
 
-if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ]; then
+if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ] || [ -z "$vaultSiteRegistry" ] || [ -z "$VaultRegistry" ]; then
     echo "   ❌ Deployment failed"
     echo "$DEPLOY_OUTPUT" | tail -30
     exit 1
@@ -50,6 +52,8 @@ fi
 echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
 echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
 echo "   ✅ GoldAccountLedger: $ACCOUNT_LEDGER"
+echo "   ✅ vaultSiteRegistry: $vaultSiteRegistry"
+echo "   ✅ vaultRegistry: $vaultRegistry"
 echo ""
 
 # Verify
