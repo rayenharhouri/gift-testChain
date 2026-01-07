@@ -502,4 +502,26 @@ contract MemberRegistry is Ownable {
         addressToMemberGIC[addr] = memberGIC;
         return true;
     }
+     /**
+     * @dev Returns the roles bitmask of msg.sender if they are linked to a member and ACTIVE.
+     * @notice If msg.sender is not linked to any member or the member is not ACTIVE, returns 0.
+     */
+    function getMyRoles() external view returns (uint256) {
+        // Find which memberGIC this address is linked to
+        string memory memberGIC = addressToMemberGIC[msg.sender];
+
+        // If no mapping, no roles
+        if (bytes(memberGIC).length == 0) {
+            return 0;
+        }
+
+        Member memory m = members[memberGIC];
+
+        // Only ACTIVE members’ roles are considered valid
+        if (m.status != MemberStatus.ACTIVE) {
+            return 0;
+        }
+
+        return m.roles;
+    }
 }
