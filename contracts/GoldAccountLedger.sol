@@ -11,7 +11,9 @@ import {IMemberRegistry} from "./Interfaces/IMemberRegistry.sol";
  * Responsibilities:
  * - Create and register gold accounts for active members
  * - Maintain per-account gold balance (units/tokens)
- * - Provide controlled balance mutation via PLATFORM / CUSTODIAN roles
+ * - Provide controlled balance mutation via:
+ *   - PLATFORM / CUSTODIAN (admin path)
+ *   - Whitelisted contracts (system path)
  *
  * Design notes:
  * - Accounts are keyed by `igan` (string) to stay aligned with off-chain IDs.
@@ -81,22 +83,16 @@ contract GoldAccountLedger is Ownable {
     /// @notice Mapping from owner address to list of IGANs controlled by that address.
     mapping(address => string[]) public addressAccounts;
 
+    /**
+     * @notice Whitelisted contracts allowed to update balances via `updateBalanceFromContract`.
+     * @dev Set by PLATFORM via `setBalanceUpdater`.
+     */
+    mapping(address => bool) public balanceUpdaters;
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
 
-    /**
-     * @notice Emitted when a new gold account is created.
-     * @param igan The IGAN of the newly created account.
-     * @param memberGIC The GIC of the owning member.
-     * @param ownerAddress The address that operates the account.
-     * @param vaultSiteId The vault site where the associated gold is stored.
-     * @param guaranteeDepositAccount Off-chain guarantee deposit account reference.
-     * @param goldAccountPurpose Business purpose of the account.
-     * @param initialDeposit Off-chain/fiat initial deposit value.
-     * @param certificateAbsenceReason Reason for missing certificate, if any.
-     * @param timestamp Block timestamp at account creation.
-     */
     event AccountCreated(
         string indexed igan,
         string indexed memberGIC,
@@ -109,16 +105,6 @@ contract GoldAccountLedger is Ownable {
         uint256 timestamp
     );
 
-    /**
-     * @notice Emitted when an account balance is updated.
-     * @dev `delta` is signed: positive for credits, negative for debits.
-     * @param igan IGAN of the affected account.
-     * @param delta Signed change in balance.
-     * @param newBalance Resulting balance after the update.
-     * @param reason Free-text reason for the update (e.g. "settlement", "correction").
-     * @param tokenId Optional token/asset identifier linked to this change (0 if not used).
-     * @param timestamp Block timestamp at the time of mutation.
-     */
     event BalanceUpdated(
         string indexed igan,
         int256 delta,
@@ -128,13 +114,17 @@ contract GoldAccountLedger is Ownable {
         uint256 timestamp
     );
 
+    event BalanceUpdaterSet(
+        address indexed updater,
+        bool allowed,
+        uint256 timestamp
+    );
+
     // -------------------------------------------------------------------------
     // Modifiers
     // -------------------------------------------------------------------------
 
-    /**
-     * @dev Restricts a function to addresses with PLATFORM role in `memberRegistry`.
-     */
+    /// @dev Restricts a function to addresses with PLATFORM role in `memberRegistry`.
     modifier onlyPlatform() {
         require(
             memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
@@ -143,15 +133,19 @@ contract GoldAccountLedger is Ownable {
         _;
     }
 
-    /**
-     * @dev Restricts a function to addresses with PLATFORM or CUSTODIAN roles.
-     */
+    /// @dev Restricts a function to addresses with PLATFORM or CUSTODIAN roles.
     modifier onlyAuthorized() {
         require(
             memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM) ||
                 memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
             "Not authorized"
         );
+        _;
+    }
+
+    /// @dev Restricts a function to addresses whitelisted as balance updaters.
+    modifier onlyBalanceUpdater() {
+        require(balanceUpdaters[msg.sender], "Not authorized: updater");
         _;
     }
 
@@ -172,30 +166,29 @@ contract GoldAccountLedger is Ownable {
     }
 
     // -------------------------------------------------------------------------
-    // Account Management
+    // Admin / Configuration
     // -------------------------------------------------------------------------
 
     /**
-     * @notice Creates a new gold account (IGAN) for an active member.
-     * @dev
-     * - Caller must have PLATFORM role.
-     * - `igan` must be globally unique.
-     * - Member must be ACTIVE in the `memberRegistry`.
+     * @notice Grants or revokes permission for an address to update balances via `updateBalanceFromContract`.
+     * @dev Callable only by PLATFORM. Intended for system contracts like GoldAssetToken.
      *
-     * This function only sets `balance` to zero; actual gold movements happen
-     * later via `updateBalance` / `updateBalanceFromContract`.
-     *
-     * @param igan External gold account identifier (unique key).
-     * @param memberGIC Member GIC that owns this account.
-     * @param vaultSiteId Vault site identifier.
-     * @param guaranteeDepositAccount Off-chain guarantee deposit account reference.
-     * @param goldAccountPurpose Purpose of the account (e.g. 'trading').
-     * @param initialDeposit Off-chain initial deposit value for reference.
-     * @param certificateAbsenceReason Reason for certificate absence, if any.
-     * @param ownerAddress Address that will operate the account.
-     *
-     * @return The created IGAN (echoed).
+     * @param updater Address of the contract (or EOA) to update.
+     * @param allowed Whether the address is allowed to call `updateBalanceFromContract`.
      */
+    function setBalanceUpdater(
+        address updater,
+        bool allowed
+    ) external onlyPlatform {
+        require(updater != address(0), "Invalid updater");
+        balanceUpdaters[updater] = allowed;
+        emit BalanceUpdaterSet(updater, allowed, block.timestamp);
+    }
+
+    // -------------------------------------------------------------------------
+    // Account Management
+    // -------------------------------------------------------------------------
+
     function createAccount(
         string memory igan,
         string memory memberGIC,
@@ -265,16 +258,11 @@ contract GoldAccountLedger is Ownable {
     // -------------------------------------------------------------------------
 
     /**
-     * @notice Adjusts an account balance (admin path).
+     * @notice Adjusts an account balance (admin / human path).
      * @dev
      * - Callable by PLATFORM or CUSTODIAN.
      * - `delta` can be positive (credit) or negative (debit).
      * - Reverts if resulting balance would be negative.
-     *
-     * @param igan IGAN of the account to update.
-     * @param delta Signed change to apply to the balance.
-     * @param reason Free-text reason for the change.
-     * @param tokenId Optional token/asset ID reference (0 if not applicable).
      */
     function updateBalance(
         string memory igan,
@@ -286,30 +274,22 @@ contract GoldAccountLedger is Ownable {
     }
 
     /**
-     * @notice Adjusts an account balance via a separate entry point (e.g. from contracts).
-     * @dev Uses the same role checks as `updateBalance`. Kept for interface compatibility.
-     *
-     * @param igan IGAN of the account to update.
-     * @param delta Signed change to apply to the balance.
-     * @param reason Free-text reason for the change.
-     * @param tokenId Optional token/asset ID reference (0 if not applicable).
+     * @notice Adjusts an account balance from a whitelisted contract (system path).
+     * @dev
+     * - Caller must be marked as `balanceUpdaters[caller] == true`.
+     * - Intended for programmatic flows (e.g., asset lifecycle).
      */
     function updateBalanceFromContract(
         string memory igan,
         int256 delta,
         string memory reason,
         uint256 tokenId
-    ) external onlyAuthorized {
+    ) external onlyBalanceUpdater {
         _updateBalanceInternal(igan, delta, reason, tokenId);
     }
 
     /**
      * @dev Internal balance update routine used by both public entrypoints.
-     *
-     * @param igan IGAN of the account to mutate.
-     * @param delta Signed change of balance.
-     * @param reason Reason string for the update.
-     * @param tokenId Optional asset/token linkage.
      */
     function _updateBalanceInternal(
         string memory igan,
@@ -319,7 +299,6 @@ contract GoldAccountLedger is Ownable {
     ) internal {
         Account storage account = accounts[igan];
 
-        // Existence / liveness
         require(account.createdAt != 0, "Account does not exist");
         require(account.active, "Account not active");
 
