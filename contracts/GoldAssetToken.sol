@@ -62,7 +62,6 @@ contract GoldAssetToken is ERC1155, Ownable {
         AssetStatus status;
         uint256 mintedAt;
         bool certified;
-        // NEW: bind this asset permanently to a specific IGAN
         string igan;
     }
 

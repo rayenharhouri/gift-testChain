@@ -2,37 +2,101 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./Interfaces/IMemberRegistry.sol";
+import {IMemberRegistry} from "./Interfaces/IMemberRegistry.sol";
 
+/**
+ * @title GoldAccountLedger
+ * @dev On-chain ledger for "gold accounts" (IGAN) owned by GIFT members.
+ *
+ * Responsibilities:
+ * - Create and register gold accounts for active members
+ * - Maintain per-account gold balance (units/tokens)
+ * - Provide controlled balance mutation via PLATFORM / CUSTODIAN roles
+ *
+ * Design notes:
+ * - Accounts are keyed by `igan` (string) to stay aligned with off-chain IDs.
+ * - Member validity is delegated to `IMemberRegistry`.
+ * - This contract does NOT custody ERC20/ETH; it only maintains a ledger.
+ */
 contract GoldAccountLedger is Ownable {
-    uint256 constant ROLE_PLATFORM = 1 << 6;
-    uint256 constant ROLE_CUSTODIAN = 1 << 2;
-    uint8 constant MEMBER_ACTIVE = 1;
+    // -------------------------------------------------------------------------
+    // Constants & Types
+    // -------------------------------------------------------------------------
 
+    /// @notice Bitmask for the PLATFORM role in the member registry.
+    uint256 public constant ROLE_PLATFORM = 1 << 6;
+
+    /// @notice Bitmask for the CUSTODIAN role in the member registry.
+    uint256 public constant ROLE_CUSTODIAN = 1 << 2;
+
+    /// @notice Member status value indicating an active member in IMemberRegistry.
+    uint8 public constant MEMBER_ACTIVE = 1;
+
+    /**
+     * @notice Gold account metadata and state.
+     * @dev `balance` is the on-chain gold balance (atomic units).
+     *      `initialDeposit` is a fiat/off-chain value mirrored for reference.
+     */
     struct Account {
+        /// @notice IGAN (gold account identifier) — external/business ID.
         string igan;
-        string memberGIC; // owner member
-        address ownerAddress; // wallet that operates the account
-        string vaultSiteId; // vault_site_id
-        string guaranteeDepositAccount; // guarantee_deposit_account
-        string goldAccountPurpose; // gold_account_purpose: 'trading', 'custody', 'collateral', 'savings'
-        uint256 initialDeposit; // initial_deposit (fiat/off-chain amount, just stored)
-        string certificateAbsenceReason; // certificate_absence_reason
-        uint256 balance; // gold balance (tokens/units)
+        /// @notice GIC of the member that owns this account.
+        string memberGIC;
+        /// @notice EOA or contract address that operates this account.
+        address ownerAddress;
+        /// @notice Vault site identifier where the underlying gold is stored.
+        string vaultSiteId;
+        /// @notice Off-chain/fiat guarantee deposit account reference.
+        string guaranteeDepositAccount;
+        /// @notice Account purpose, e.g. 'trading', 'custody', 'collateral', 'savings'.
+        string goldAccountPurpose;
+        /// @notice Initial deposit value (fiat/off-chain) for reference only.
+        uint256 initialDeposit;
+        /// @notice Reason for absence of certificate, if applicable.
+        string certificateAbsenceReason;
+        /// @notice On-chain gold balance (units/tokens).
+        uint256 balance;
+        /// @notice UNIX timestamp of account creation.
         uint256 createdAt;
+        /// @notice Whether the account is currently active.
         bool active;
     }
 
+    // -------------------------------------------------------------------------
+    // Storage
+    // -------------------------------------------------------------------------
+
+    /// @notice Registry used to check member roles and statuses.
     IMemberRegistry public memberRegistry;
+
+    /// @dev Reserved counter for potential auto-IGAN generation (currently unused).
     uint256 private _accountCounter;
 
+    /// @notice Mapping from IGAN to account details.
     mapping(string => Account) public accounts;
+
+    /// @notice Mapping from member GIC to list of IGANs they own.
     mapping(string => string[]) public memberAccounts;
+
+    /// @notice Mapping from owner address to list of IGANs controlled by that address.
     mapping(address => string[]) public addressAccounts;
 
-    // US-10 prep: only validated contracts can adjust balances
-    mapping(address => bool) public balanceUpdaters;
+    // -------------------------------------------------------------------------
+    // Events
+    // -------------------------------------------------------------------------
 
+    /**
+     * @notice Emitted when a new gold account is created.
+     * @param igan The IGAN of the newly created account.
+     * @param memberGIC The GIC of the owning member.
+     * @param ownerAddress The address that operates the account.
+     * @param vaultSiteId The vault site where the associated gold is stored.
+     * @param guaranteeDepositAccount Off-chain guarantee deposit account reference.
+     * @param goldAccountPurpose Business purpose of the account.
+     * @param initialDeposit Off-chain/fiat initial deposit value.
+     * @param certificateAbsenceReason Reason for missing certificate, if any.
+     * @param timestamp Block timestamp at account creation.
+     */
     event AccountCreated(
         string indexed igan,
         string indexed memberGIC,
@@ -45,6 +109,16 @@ contract GoldAccountLedger is Ownable {
         uint256 timestamp
     );
 
+    /**
+     * @notice Emitted when an account balance is updated.
+     * @dev `delta` is signed: positive for credits, negative for debits.
+     * @param igan IGAN of the affected account.
+     * @param delta Signed change in balance.
+     * @param newBalance Resulting balance after the update.
+     * @param reason Free-text reason for the update (e.g. "settlement", "correction").
+     * @param tokenId Optional token/asset identifier linked to this change (0 if not used).
+     * @param timestamp Block timestamp at the time of mutation.
+     */
     event BalanceUpdated(
         string indexed igan,
         int256 delta,
@@ -54,12 +128,13 @@ contract GoldAccountLedger is Ownable {
         uint256 timestamp
     );
 
-    event BalanceUpdaterSet(
-        address indexed updater,
-        bool allowed,
-        uint256 timestamp
-    );
+    // -------------------------------------------------------------------------
+    // Modifiers
+    // -------------------------------------------------------------------------
 
+    /**
+     * @dev Restricts a function to addresses with PLATFORM role in `memberRegistry`.
+     */
     modifier onlyPlatform() {
         require(
             memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
@@ -68,6 +143,9 @@ contract GoldAccountLedger is Ownable {
         _;
     }
 
+    /**
+     * @dev Restricts a function to addresses with PLATFORM or CUSTODIAN roles.
+     */
     modifier onlyAuthorized() {
         require(
             memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM) ||
@@ -77,28 +155,47 @@ contract GoldAccountLedger is Ownable {
         _;
     }
 
-    modifier onlyBalanceUpdater() {
-        require(balanceUpdaters[msg.sender], "Not authorized: updater");
-        _;
-    }
+    // -------------------------------------------------------------------------
+    // Constructor
+    // -------------------------------------------------------------------------
 
+    /**
+     * @notice Deploys the GoldAccountLedger.
+     * @param _memberRegistry Address of the IMemberRegistry contract to integrate with.
+     */
     constructor(address _memberRegistry) Ownable(msg.sender) {
+        require(_memberRegistry != address(0), "Invalid registry");
         memberRegistry = IMemberRegistry(_memberRegistry);
+
+        // Optional: reserved for future auto-IGAN generation if needed.
         _accountCounter = 1000;
     }
 
-    /**
-     * @dev Allow PLATFORM to approve which contracts can call updateBalanceFromContract()
-     */
-    function setBalanceUpdater(
-        address updater,
-        bool allowed
-    ) external onlyPlatform {
-        require(updater != address(0), "Invalid updater");
-        balanceUpdaters[updater] = allowed;
-        emit BalanceUpdaterSet(updater, allowed, block.timestamp);
-    }
+    // -------------------------------------------------------------------------
+    // Account Management
+    // -------------------------------------------------------------------------
 
+    /**
+     * @notice Creates a new gold account (IGAN) for an active member.
+     * @dev
+     * - Caller must have PLATFORM role.
+     * - `igan` must be globally unique.
+     * - Member must be ACTIVE in the `memberRegistry`.
+     *
+     * This function only sets `balance` to zero; actual gold movements happen
+     * later via `updateBalance` / `updateBalanceFromContract`.
+     *
+     * @param igan External gold account identifier (unique key).
+     * @param memberGIC Member GIC that owns this account.
+     * @param vaultSiteId Vault site identifier.
+     * @param guaranteeDepositAccount Off-chain guarantee deposit account reference.
+     * @param goldAccountPurpose Purpose of the account (e.g. 'trading').
+     * @param initialDeposit Off-chain initial deposit value for reference.
+     * @param certificateAbsenceReason Reason for certificate absence, if any.
+     * @param ownerAddress Address that will operate the account.
+     *
+     * @return The created IGAN (echoed).
+     */
     function createAccount(
         string memory igan,
         string memory memberGIC,
@@ -109,10 +206,9 @@ contract GoldAccountLedger is Ownable {
         string memory certificateAbsenceReason,
         address ownerAddress
     ) external onlyPlatform returns (string memory) {
+        // Basic required fields
         require(bytes(igan).length > 0, "Invalid IGAN");
         require(bytes(memberGIC).length > 0, "Invalid memberGIC");
-        uint8 status = memberRegistry.getMemberStatus(memberGIC);
-        require(status == MEMBER_ACTIVE, "Member not active");
         require(bytes(vaultSiteId).length > 0, "Invalid vault site");
         require(
             bytes(guaranteeDepositAccount).length > 0,
@@ -123,6 +219,12 @@ contract GoldAccountLedger is Ownable {
             "Invalid account purpose"
         );
         require(ownerAddress != address(0), "Invalid address");
+
+        // Member must be active
+        uint8 status = memberRegistry.getMemberStatus(memberGIC);
+        require(status == MEMBER_ACTIVE, "Member not active");
+
+        // IGAN must not be in use
         require(accounts[igan].createdAt == 0, "Account already exists");
 
         Account memory newAccount = Account({
@@ -134,7 +236,7 @@ contract GoldAccountLedger is Ownable {
             goldAccountPurpose: goldAccountPurpose,
             initialDeposit: initialDeposit,
             certificateAbsenceReason: certificateAbsenceReason,
-            balance: 0, // gold balance starts at 0
+            balance: 0,
             createdAt: block.timestamp,
             active: true
         });
@@ -158,9 +260,21 @@ contract GoldAccountLedger is Ownable {
         return igan;
     }
 
+    // -------------------------------------------------------------------------
+    // Balance Management
+    // -------------------------------------------------------------------------
+
     /**
-     * @dev MVP/admin path (kept): PLATFORM or CUSTODIAN can adjust balances.
-     * For US-10 strict mode, you can later restrict/remove this and use updateBalanceFromContract().
+     * @notice Adjusts an account balance (admin path).
+     * @dev
+     * - Callable by PLATFORM or CUSTODIAN.
+     * - `delta` can be positive (credit) or negative (debit).
+     * - Reverts if resulting balance would be negative.
+     *
+     * @param igan IGAN of the account to update.
+     * @param delta Signed change to apply to the balance.
+     * @param reason Free-text reason for the change.
+     * @param tokenId Optional token/asset ID reference (0 if not applicable).
      */
     function updateBalance(
         string memory igan,
@@ -172,72 +286,96 @@ contract GoldAccountLedger is Ownable {
     }
 
     /**
-     * @dev US-10 path: only validated smart contracts can adjust balances
+     * @notice Adjusts an account balance via a separate entry point (e.g. from contracts).
+     * @dev Uses the same role checks as `updateBalance`. Kept for interface compatibility.
+     *
+     * @param igan IGAN of the account to update.
+     * @param delta Signed change to apply to the balance.
+     * @param reason Free-text reason for the change.
+     * @param tokenId Optional token/asset ID reference (0 if not applicable).
      */
     function updateBalanceFromContract(
         string memory igan,
         int256 delta,
         string memory reason,
         uint256 tokenId
-    ) external onlyBalanceUpdater {
+    ) external onlyAuthorized {
         _updateBalanceInternal(igan, delta, reason, tokenId);
     }
 
+    /**
+     * @dev Internal balance update routine used by both public entrypoints.
+     *
+     * @param igan IGAN of the account to mutate.
+     * @param delta Signed change of balance.
+     * @param reason Reason string for the update.
+     * @param tokenId Optional asset/token linkage.
+     */
     function _updateBalanceInternal(
         string memory igan,
         int256 delta,
         string memory reason,
         uint256 tokenId
     ) internal {
-        // Step 3: clear existence vs active errors
-        require(accounts[igan].createdAt != 0, "Account does not exist");
-        require(accounts[igan].active, "Account not active");
+        Account storage account = accounts[igan];
+
+        // Existence / liveness
+        require(account.createdAt != 0, "Account does not exist");
+        require(account.active, "Account not active");
 
         if (delta < 0) {
-            require(
-                accounts[igan].balance >= uint256(-delta),
-                "Insufficient balance"
-            );
-            accounts[igan].balance -= uint256(-delta);
+            uint256 absDelta = uint256(-delta);
+            require(account.balance >= absDelta, "Insufficient balance");
+            account.balance -= absDelta;
+        } else if (delta > 0) {
+            account.balance += uint256(delta);
         } else {
-            accounts[igan].balance += uint256(delta);
+            // delta == 0 allowed (no-op)
         }
 
         emit BalanceUpdated(
             igan,
             delta,
-            accounts[igan].balance,
+            account.balance,
             reason,
             tokenId,
             block.timestamp
         );
     }
 
+    // -------------------------------------------------------------------------
+    // Views
+    // -------------------------------------------------------------------------
+
     function getAccountBalance(
         string memory igan
-    ) external view returns (uint256) {
+    ) external view returns (uint256 balance) {
         require(accounts[igan].createdAt != 0, "Account does not exist");
         return accounts[igan].balance;
     }
 
     function getAccountsByMember(
         string memory memberGIC
-    ) external view returns (string[] memory) {
+    ) external view returns (string[] memory list) {
         return memberAccounts[memberGIC];
     }
 
     function getAccountsByAddress(
         address addr
-    ) external view returns (string[] memory) {
+    ) external view returns (string[] memory list) {
         return addressAccounts[addr];
     }
 
     function getAccountDetails(
         string memory igan
-    ) external view returns (Account memory) {
+    ) external view returns (Account memory account) {
         require(accounts[igan].createdAt != 0, "Account does not exist");
         return accounts[igan];
     }
+
+    // -------------------------------------------------------------------------
+    // Internal helpers (reserved / legacy)
+    // -------------------------------------------------------------------------
 
     function _uint2str(uint256 _i) private pure returns (string memory) {
         if (_i == 0) return "0";
@@ -251,7 +389,7 @@ contract GoldAccountLedger is Ownable {
         uint256 k = len;
         while (_i != 0) {
             k = k - 1;
-            uint8 temp = (48 + uint8(_i - (_i / 10) * 10));
+            uint8 temp = 48 + uint8(_i - (_i / 10) * 10);
             bstr[k] = bytes1(temp);
             _i /= 10;
         }
