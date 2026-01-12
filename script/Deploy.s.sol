@@ -29,10 +29,11 @@ contract DeployGIFT is Script {
         console.log("VaultSiteRegistry:", address(vaultSiteRegistry));
 
         VaultRegistry vaultRegistry = new VaultRegistry(
-            address(memberRegistry),
-            address(vaultSiteRegistry)
+        address(memberRegistry),
+        address(vaultSiteRegistry)
         );
         console.log("VaultRegistry:", address(vaultRegistry));
+
 
         vm.stopBroadcast();
     }
