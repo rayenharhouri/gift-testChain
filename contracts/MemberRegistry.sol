@@ -60,11 +60,20 @@ contract MemberRegistry is Ownable {
     mapping(string => User) public users;
     mapping(address => string) public addressToMemberGIC;
     mapping(address => string) public addressToUserId;
+    mapping(address => bool) public blacklisted;
 
     string[] public memberList;
     string[] public userList;
 
     // Events
+
+    event BlacklistUpdated(
+        address indexed account,
+        bool status,
+        address indexed updatedBy,
+        uint256 timestamp
+    );
+
     event MemberRegistered(
         string indexed memberGIC,
         MemberType memberType,
@@ -167,7 +176,6 @@ contract MemberRegistry is Ownable {
             return false;
         }
 
-       
         return (m.roles & role) != 0;
     }
 
@@ -196,6 +204,45 @@ contract MemberRegistry is Ownable {
     modifier userExists(string memory userId) {
         require(users[userId].createdAt != 0, "User does not exist");
         _;
+    }
+
+    // --------------------
+    // Blacklist management
+    // --------------------
+
+    function isBlacklisted(address account) external view returns (bool) {
+        return blacklisted[account];
+    }
+
+    function addToBlacklist(
+        address account
+    ) external onlyPlatformAdmin returns (bool) {
+        require(account != address(0), "Invalid address");
+        blacklisted[account] = true;
+        emit BlacklistUpdated(account, true, msg.sender, block.timestamp);
+        return true;
+    }
+
+    function removeFromBlacklist(
+        address account
+    ) external onlyPlatformAdmin returns (bool) {
+        require(account != address(0), "Invalid address");
+        blacklisted[account] = false;
+        emit BlacklistUpdated(account, false, msg.sender, block.timestamp);
+        return true;
+    }
+
+    /**
+     * @dev Generic setter (handy for scripts/tests)
+     */
+    function setBlacklisted(
+        address account,
+        bool status
+    ) external onlyPlatformAdmin returns (bool) {
+        require(account != address(0), "Invalid address");
+        blacklisted[account] = status;
+        emit BlacklistUpdated(account, status, msg.sender, block.timestamp);
+        return true;
     }
 
     // Member Management Functions
@@ -502,7 +549,8 @@ contract MemberRegistry is Ownable {
         addressToMemberGIC[addr] = memberGIC;
         return true;
     }
-     /**
+
+    /**
      * @dev Returns the roles bitmask of msg.sender if they are linked to a member and ACTIVE.
      * @notice If msg.sender is not linked to any member or the member is not ACTIVE, returns 0.
      */

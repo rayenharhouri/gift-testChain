@@ -75,7 +75,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     mapping(uint256 => address) public assetOwner;
     mapping(string => bool) private _usedWarrants;
     mapping(string => uint256) public warrantToToken;
-    mapping(address => bool) public whitelist;
+  //  mapping(address => bool) public whitelist;
     mapping(address => bool) public blacklist;
 
     // Events
@@ -136,11 +136,6 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 timestamp
     );
 
-    event WhitelistUpdated(
-        address indexed account,
-        bool status,
-        uint256 timestamp
-    );
 
     event BlacklistUpdated(
         address indexed account,
@@ -218,10 +213,6 @@ contract GoldAssetToken is ERC1155, Ownable {
 
         require(!_usedWarrants[warrantId], "Warrant already used");
         _usedWarrants[warrantId] = true;
-
-        bytes32 assetKey = _assetKey(serialNumber, refinerName);
-        require(!_registeredAssets[assetKey], "Asset already registered");
-        _registeredAssets[assetKey] = true;
 
         uint256 tokenId = _tokenIdCounter++;
         uint256 fineWeightGrams = (weightGrams * fineness) / 10000;
@@ -436,16 +427,6 @@ contract GoldAssetToken is ERC1155, Ownable {
     // Internal Functions
 
     /**
-     * @dev Generate composite key for duplicate prevention.
-     */
-    function _assetKey(
-        string memory serialNumber,
-        string memory refinerName
-    ) private pure returns (bytes32) {
-        return keccak256(abi.encodePacked(serialNumber, refinerName));
-    }
-
-    /**
      * @dev Override URI for metadata.
      */
     function uri(uint256 tokenId) public view override returns (string memory) {
@@ -455,7 +436,7 @@ contract GoldAssetToken is ERC1155, Ownable {
 
     /**
      * @dev Force transfer for compliance (PLATFORM only).
-     *      Bypasses whitelist/blacklist, but still respects PLEDGED/IN_TRANSIT
+     *      blacklist
      *      logic via the overridden _update hook.
      */
     function forceTransfer(
@@ -468,27 +449,14 @@ contract GoldAssetToken is ERC1155, Ownable {
         require(assetOwner[tokenId] == from, "Invalid from address");
         require(to != address(0), "Invalid to address");
         require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
+        require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
+        require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
 
         _safeTransferFrom(from, to, tokenId, 1, "");
 
         emit OwnershipUpdated(tokenId, from, to, reason, block.timestamp);
     }
 
-    /**
-     * @dev Add address to whitelist (admin only).
-     */
-    function addToWhitelist(address account) external onlyAdmin {
-        whitelist[account] = true;
-        emit WhitelistUpdated(account, true, block.timestamp);
-    }
-
-    /**
-     * @dev Remove address from whitelist (admin only).
-     */
-    function removeFromWhitelist(address account) external onlyAdmin {
-        whitelist[account] = false;
-        emit WhitelistUpdated(account, false, block.timestamp);
-    }
 
     /**
      * @dev Add address to blacklist (admin only).
@@ -545,10 +513,6 @@ contract GoldAssetToken is ERC1155, Ownable {
             );
 
             if (!isForceTransfer) {
-                require(
-                    whitelist[from] && whitelist[to],
-                    "Transfer not whitelisted"
-                );
                 require(
                     !blacklist[from] && !blacklist[to],
                     "Address blacklisted"
