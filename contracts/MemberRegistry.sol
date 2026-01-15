@@ -338,38 +338,37 @@ contract MemberRegistry is Ownable {
 
     // Role Management Functions
 
+
     /**
-     * @dev Assign role to member
+     * @dev Update a member role bit (grant/revoke) in one function.
+     * @param memberGIC Member identifier.
+     * @param role Bitmask role to change (e.g., ROLE_CUSTODIAN).
+     * @param enabled true => grant, false => revoke.
      */
-    function assignRole(
+    function setRole(
         string memory memberGIC,
-        uint256 role
+        uint256 role,
+        bool enabled
     ) external onlyGovernance memberExists(memberGIC) returns (bool) {
+        require(role != 0, "Invalid role");
+        // Optional: only allow editing ACTIVE members (matches old assignRole behavior)
         require(
             members[memberGIC].status == MemberStatus.ACTIVE,
             "Member not active"
         );
 
-        members[memberGIC].roles |= role;
-        members[memberGIC].updatedAt = block.timestamp;
+        if (enabled) {
+            members[memberGIC].roles |= role;
+            emit RoleAssigned(memberGIC, role, msg.sender, block.timestamp);
+        } else {
+            members[memberGIC].roles &= ~role;
+            emit RoleRevoked(memberGIC, role, msg.sender, block.timestamp);
+        }
 
-        emit RoleAssigned(memberGIC, role, msg.sender, block.timestamp);
+        members[memberGIC].updatedAt = block.timestamp;
         return true;
     }
 
-    /**
-     * @dev Revoke role from member
-     */
-    function revokeRole(
-        string memory memberGIC,
-        uint256 role
-    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
-        members[memberGIC].roles &= ~role;
-        members[memberGIC].updatedAt = block.timestamp;
-
-        emit RoleRevoked(memberGIC, role, msg.sender, block.timestamp);
-        return true;
-    }
 
     // User Management Functions
 
