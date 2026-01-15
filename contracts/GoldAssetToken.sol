@@ -69,14 +69,13 @@ contract GoldAssetToken is ERC1155, Ownable {
     IMemberRegistry public memberRegistry;
     IGoldAccountLedger public accountLedger;
     uint256 private _tokenIdCounter;
+    bool private _inForceTransfer;
 
     mapping(uint256 => GoldAsset) public assets;
     mapping(bytes32 => bool) private _registeredAssets;
     mapping(uint256 => address) public assetOwner;
     mapping(string => bool) private _usedWarrants;
     mapping(string => uint256) public warrantToToken;
-  //  mapping(address => bool) public whitelist;
-    mapping(address => bool) public blacklist;
 
     // Events
     event AssetMinted(
@@ -136,13 +135,6 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 timestamp
     );
 
-
-    event BlacklistUpdated(
-        address indexed account,
-        bool status,
-        uint256 timestamp
-    );
-
     // Modifiers
     modifier onlyRefiner() {
         require(
@@ -166,6 +158,16 @@ contract GoldAssetToken is ERC1155, Ownable {
             memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
             "Not authorized: PLATFORM role required"
         );
+        _;
+    }
+
+    modifier callerNotBlacklisted() {
+        require(!memberRegistry.isBlacklisted(msg.sender), "Caller blacklisted");
+        _;
+    }
+
+    modifier addrNotBlacklisted(address a) {
+        require(!memberRegistry.isBlacklisted(a), "Address blacklisted");
         _;
     }
 
@@ -433,45 +435,56 @@ contract GoldAssetToken is ERC1155, Ownable {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         return string(abi.encodePacked("ipfs://", assets[tokenId].tokenId));
     }
+    /**
+     * @dev Force transfer for compliance (PLATFORM only).
+     *      blacklist
+     *      logic via the overridden _update hook.
+     */
+    function transferAsset(uint256 tokenId, address to)
+        external
+        callerNotBlacklisted
+        addrNotBlacklisted(to)
+        returns (bool)
+    {
+        require(assetOwner[tokenId] == msg.sender, "Not token owner");
+        _safeTransferFrom(msg.sender, to, tokenId, 1, "");
+        return true;
+    }
 
     /**
      * @dev Force transfer for compliance (PLATFORM only).
      *      blacklist
      *      logic via the overridden _update hook.
      */
-    function forceTransfer(
-        uint256 tokenId,
-        address from,
-        address to,
-        string memory reason
-    ) external onlyAdmin {
+    function forceTransfer(uint256 tokenId, address from, address to, string memory reason)
+        external
+        callerNotBlacklisted
+        onlyAdmin
+    {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         require(assetOwner[tokenId] == from, "Invalid from address");
         require(to != address(0), "Invalid to address");
         require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
-        require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
-        require(assets[tokenId].status != AssetStatus.BURNED, "Asset burned");
 
+        _inForceTransfer = true;
         _safeTransferFrom(from, to, tokenId, 1, "");
+        _inForceTransfer = false;
 
         emit OwnershipUpdated(tokenId, from, to, reason, block.timestamp);
     }
-
 
     /**
      * @dev Add address to blacklist (admin only).
      */
     function addToBlacklist(address account) external onlyAdmin {
-        blacklist[account] = true;
-        emit BlacklistUpdated(account, true, block.timestamp);
+        memberRegistry.isBlacklisted(account);
     }
 
     /**
      * @dev Remove address from blacklist (admin only).
      */
     function removeFromBlacklist(address account) external onlyAdmin {
-        blacklist[account] = false;
-        emit BlacklistUpdated(account, false, block.timestamp);
+        memberRegistry.isBlacklisted(account);
     }
 
     /**
@@ -514,7 +527,8 @@ contract GoldAssetToken is ERC1155, Ownable {
 
             if (!isForceTransfer) {
                 require(
-                    !blacklist[from] && !blacklist[to],
+                    !memberRegistry.isBlacklisted(from) &&
+                        !memberRegistry.isBlacklisted(to),
                     "Address blacklisted"
                 );
             }
@@ -524,6 +538,16 @@ contract GoldAssetToken is ERC1155, Ownable {
 
         // Sync business ownership mapping + emit business transfer event
         for (uint256 i = 0; i < ids.length; i++) {
+            if (from != address(0))
+                require(
+                    !memberRegistry.isBlacklisted(from),
+                    "Address blacklisted"
+                );
+            if (to != address(0))
+                require(
+                    !memberRegistry.isBlacklisted(to),
+                    "Address blacklisted"
+                );
             // MVP assumption: amount is 1 per asset tokenId
             if (values[i] == 1) {
                 uint256 tokenId = ids[i];

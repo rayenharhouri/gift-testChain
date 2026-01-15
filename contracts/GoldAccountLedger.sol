@@ -308,8 +308,6 @@ contract GoldAccountLedger is Ownable {
             account.balance -= absDelta;
         } else if (delta > 0) {
             account.balance += uint256(delta);
-        } else {
-            // delta == 0 allowed (no-op)
         }
 
         emit BalanceUpdated(

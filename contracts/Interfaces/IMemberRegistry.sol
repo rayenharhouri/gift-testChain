@@ -4,4 +4,5 @@ pragma solidity ^0.8.20;
 interface IMemberRegistry {
     function isMemberInRole(address member, uint256 role) external view returns (bool);
     function getMemberStatus(string memory memberGIC) external view returns (uint8);
+    function isBlacklisted(address account) external view returns (bool);
 }
