@@ -45,26 +45,26 @@ DEPLOY_OUTPUT=$(PRIVATE_KEY="$PRIVATE_KEY" forge script script/Deploy.s.sol:Depl
   --broadcast 2>&1)
 
 MEMBER_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "MemberRegistry:" | tail -1 | awk '{print $NF}')
+DOCUMENT_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "DocumentRegistry:" | tail -1 | awk '{print $NF}')
 GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | tail -1 | awk '{print $NF}')
 ACCOUNT_LEDGER=$(echo "$DEPLOY_OUTPUT" | grep "GoldAccountLedger:" | tail -1 | awk '{print $NF}')
+TRANSACTION_ORDER_BOOK=$(echo "$DEPLOY_OUTPUT" | grep "TransactionOrderBook:" | tail -1 | awk '{print $NF}')
 VAULT_SITE_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "VaultSiteRegistry:" | tail -1 | awk '{print $NF}')
 VAULT_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "VaultRegistry:" | tail -1 | awk '{print $NF}')
-DocumentRegistry=$(echo "$DEPLOY_OUTPUT" | grep "DocumentRegistry:" | tail -1 | awk '{print $NF}')
-TransactionOrderBook=$(echo "$DEPLOY_OUTPUT" | grep "TransactionOrderBook:" | tail -1 | awk '{print $NF}')
 
-if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ] || [ -z "$VAULT_SITE_REGISTRY" ] || [ -z "$VAULT_REGISTRY" ] || [ -z "$DocumentRegistry" ] || [ -z "$TransactionOrderBook" ]; then
+if [ -z "$MEMBER_REGISTRY" ] || [ -z "$DOCUMENT_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ] || [ -z "$TRANSACTION_ORDER_BOOK" ] || [ -z "$VAULT_SITE_REGISTRY" ] || [ -z "$VAULT_REGISTRY" ]; then
     echo "   ❌ Deployment failed"
     echo "$DEPLOY_OUTPUT" | tail -30
     exit 1
 fi
 
 echo "   ✅ MemberRegistry: $MEMBER_REGISTRY"
+echo "   ✅ DocumentRegistry: $DOCUMENT_REGISTRY"
 echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
 echo "   ✅ GoldAccountLedger: $ACCOUNT_LEDGER"
+echo "   ✅ TransactionOrderBook: $TRANSACTION_ORDER_BOOK"
 echo "   ✅ VaultSiteRegistry: $VAULT_SITE_REGISTRY"
 echo "   ✅ VaultRegistry: $VAULT_REGISTRY"
-echo "   ✅ DocumentRegistry: $DocumentRegistry"
-echo "   ✅ TransactionOrderBook: $TransactionOrderBook"
 echo ""
 
 # Verify
@@ -96,7 +96,7 @@ fi
 echo "   ✅ setBalanceUpdater(GoldAssetToken,true) sent"
 echo ""
 
-# read back to confirm
+# (Optional) read back to confirm
 UPDATER_ALLOWED=$(cast call "$ACCOUNT_LEDGER" "balanceUpdaters(address)(bool)" "$GOLD_ASSET_TOKEN" --rpc-url "$RPC_URL")
 echo "   ✅ balanceUpdaters(GoldAssetToken): $UPDATER_ALLOWED"
 echo ""
@@ -108,12 +108,12 @@ cat > deployments/avalanche.json << EOF
   "network": "avalanche",
   "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "memberRegistry": "$MEMBER_REGISTRY",
+  "documentRegistry": "$DOCUMENT_REGISTRY",
   "goldAssetToken": "$GOLD_ASSET_TOKEN",
   "goldAccountLedger": "$ACCOUNT_LEDGER",
+  "transactionOrderBook": "$TRANSACTION_ORDER_BOOK",
   "vaultSiteRegistry": "$VAULT_SITE_REGISTRY",
   "vaultRegistry": "$VAULT_REGISTRY",
-  "documentRegistry": "$DocumentRegistry",
-  "transactionOrderBook": "$TransactionOrderBook",
   "deployer": "$DEPLOYER_ADDR",
   "chainId": "$CHAIN_ID"
 }
@@ -123,10 +123,9 @@ echo "✅ DEPLOYMENT COMPLETE"
 echo ""
 echo "Addresses:"
 echo "  MemberRegistry:     $MEMBER_REGISTRY"
+echo "  DocumentRegistry:   $DOCUMENT_REGISTRY"
 echo "  GoldAssetToken:     $GOLD_ASSET_TOKEN"
 echo "  GoldAccountLedger:  $ACCOUNT_LEDGER"
+echo "  TransactionOrderBook: $TRANSACTION_ORDER_BOOK"
 echo "  VaultSiteRegistry:  $VAULT_SITE_REGISTRY"
 echo "  VaultRegistry:      $VAULT_REGISTRY"
-echo "  DocumentRegistry:   $DocumentRegistry"
-echo "  TransactionOrderBook: $TransactionOrderBook"
-echo ""

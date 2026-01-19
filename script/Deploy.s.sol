@@ -7,6 +7,8 @@ import "../contracts/GoldAccountLedger.sol";
 import "../contracts/GoldAssetToken.sol";
 import "../contracts/VaultSiteRegistry.sol";
 import "../contracts/VaultRegistry.sol";
+import "../contracts/DocumentRegistry.sol";
+import "../contracts/TransactionOrderBook.sol";
 
 contract DeployGIFT is Script {
     function run() external {
@@ -16,6 +18,9 @@ contract DeployGIFT is Script {
         MemberRegistry memberRegistry = new MemberRegistry();
         console.log("MemberRegistry:", address(memberRegistry));
 
+        DocumentRegistry documentRegistry = new DocumentRegistry(address(memberRegistry));
+        console.log("DocumentRegistry:", address(documentRegistry));
+
         GoldAccountLedger accountLedger = new GoldAccountLedger(address(memberRegistry));
         console.log("GoldAccountLedger:", address(accountLedger));
 
@@ -24,6 +29,11 @@ contract DeployGIFT is Script {
             address(accountLedger)
         );
         console.log("GoldAssetToken:", address(goldAssetToken));
+
+        TransactionOrderBook transactionOrderBook = new TransactionOrderBook(
+            address(memberRegistry)
+        );
+        console.log("TransactionOrderBook:", address(transactionOrderBook));
 
         VaultSiteRegistry vaultSiteRegistry = new VaultSiteRegistry(address(memberRegistry));
         console.log("VaultSiteRegistry:", address(vaultSiteRegistry));
