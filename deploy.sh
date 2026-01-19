@@ -49,8 +49,10 @@ GOLD_ASSET_TOKEN=$(echo "$DEPLOY_OUTPUT" | grep "GoldAssetToken:" | tail -1 | aw
 ACCOUNT_LEDGER=$(echo "$DEPLOY_OUTPUT" | grep "GoldAccountLedger:" | tail -1 | awk '{print $NF}')
 VAULT_SITE_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "VaultSiteRegistry:" | tail -1 | awk '{print $NF}')
 VAULT_REGISTRY=$(echo "$DEPLOY_OUTPUT" | grep "VaultRegistry:" | tail -1 | awk '{print $NF}')
+DocumentRegistry=$(echo "$DEPLOY_OUTPUT" | grep "DocumentRegistry:" | tail -1 | awk '{print $NF}')
+TransactionOrderBook=$(echo "$DEPLOY_OUTPUT" | grep "TransactionOrderBook:" | tail -1 | awk '{print $NF}')
 
-if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ] || [ -z "$VAULT_SITE_REGISTRY" ] || [ -z "$VAULT_REGISTRY" ]; then
+if [ -z "$MEMBER_REGISTRY" ] || [ -z "$GOLD_ASSET_TOKEN" ] || [ -z "$ACCOUNT_LEDGER" ] || [ -z "$VAULT_SITE_REGISTRY" ] || [ -z "$VAULT_REGISTRY" ] || [ -z "$DocumentRegistry" ] || [ -z "$TransactionOrderBook" ]; then
     echo "   ❌ Deployment failed"
     echo "$DEPLOY_OUTPUT" | tail -30
     exit 1
@@ -61,6 +63,8 @@ echo "   ✅ GoldAssetToken: $GOLD_ASSET_TOKEN"
 echo "   ✅ GoldAccountLedger: $ACCOUNT_LEDGER"
 echo "   ✅ VaultSiteRegistry: $VAULT_SITE_REGISTRY"
 echo "   ✅ VaultRegistry: $VAULT_REGISTRY"
+echo "   ✅ DocumentRegistry: $DocumentRegistry"
+echo "   ✅ TransactionOrderBook: $TransactionOrderBook"
 echo ""
 
 # Verify
@@ -92,7 +96,7 @@ fi
 echo "   ✅ setBalanceUpdater(GoldAssetToken,true) sent"
 echo ""
 
-# (Optional) read back to confirm
+# read back to confirm
 UPDATER_ALLOWED=$(cast call "$ACCOUNT_LEDGER" "balanceUpdaters(address)(bool)" "$GOLD_ASSET_TOKEN" --rpc-url "$RPC_URL")
 echo "   ✅ balanceUpdaters(GoldAssetToken): $UPDATER_ALLOWED"
 echo ""
@@ -108,6 +112,8 @@ cat > deployments/avalanche.json << EOF
   "goldAccountLedger": "$ACCOUNT_LEDGER",
   "vaultSiteRegistry": "$VAULT_SITE_REGISTRY",
   "vaultRegistry": "$VAULT_REGISTRY",
+  "documentRegistry": "$DocumentRegistry",
+  "transactionOrderBook": "$TransactionOrderBook",
   "deployer": "$DEPLOYER_ADDR",
   "chainId": "$CHAIN_ID"
 }
@@ -121,3 +127,6 @@ echo "  GoldAssetToken:     $GOLD_ASSET_TOKEN"
 echo "  GoldAccountLedger:  $ACCOUNT_LEDGER"
 echo "  VaultSiteRegistry:  $VAULT_SITE_REGISTRY"
 echo "  VaultRegistry:      $VAULT_REGISTRY"
+echo "  DocumentRegistry:   $DocumentRegistry"
+echo "  TransactionOrderBook: $TransactionOrderBook"
+echo ""
