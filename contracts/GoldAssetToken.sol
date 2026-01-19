@@ -4,23 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import {IGoldAccountLedger} from "./Interfaces/IGoldAccountLedger.sol";
 import "./Interfaces/IMemberRegistry.sol";
-
-interface IGoldAccountLedger {
-    function updateBalance(
-        string memory igan,
-        int256 delta,
-        string memory reason,
-        uint256 tokenId
-    ) external;
-
-    function updateBalanceFromContract(
-        string memory igan,
-        int256 delta,
-        string memory reason,
-        uint256 tokenId
-    ) external;
-}
 
 contract GoldAssetToken is ERC1155, Ownable {
     using Strings for uint256;
