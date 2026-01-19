@@ -206,6 +206,20 @@ contract MemberRegistry is Ownable {
         _;
     }
 
+    modifier notBlacklisted(address account) {
+        require(!blacklisted[account], "Address blacklisted");
+        _;
+    }
+    modifier callerNotBlacklisted() {
+        require(!blacklisted[msg.sender], "Caller blacklisted");
+        _;
+    }
+    modifier callerAndAddressNotBlacklisted(address account) {
+        require(!blacklisted[msg.sender], "Caller blacklisted");
+        require(!blacklisted[account], "Address blacklisted");
+        _;
+    }
+
     // --------------------
     // Blacklist management
     // --------------------
@@ -256,7 +270,7 @@ contract MemberRegistry is Ownable {
         bytes32 memberHash,
         address userAddress,
         uint256 role
-    ) external onlyPlatformAdmin returns (bool) {
+    ) external onlyPlatformAdmin callerNotBlacklisted notBlacklisted(userAddress) returns (bool) {
         require(members[memberGIC].createdAt == 0, "Member already exists");
         require(bytes(memberGIC).length > 0, "Invalid member GIC");
         require(userAddress != address(0), "Invalid user address");
@@ -338,7 +352,6 @@ contract MemberRegistry is Ownable {
 
     // Role Management Functions
 
-
     /**
      * @dev Update a member role bit (grant/revoke) in one function.
      * @param memberGIC Member identifier.
@@ -369,7 +382,6 @@ contract MemberRegistry is Ownable {
         return true;
     }
 
-
     // User Management Functions
 
     /**
@@ -378,7 +390,7 @@ contract MemberRegistry is Ownable {
     function registerUser(
         string memory userId,
         bytes32 userHash
-    ) external onlyPlatformAdmin returns (bool) {
+    ) external onlyPlatformAdmin callerNotBlacklisted returns (bool) {
         require(users[userId].createdAt == 0, "User already exists");
         require(bytes(userId).length > 0, "Invalid user ID");
 
