@@ -77,7 +77,7 @@ echo "   ✅ VaultSiteRegistry getVaultSiteIds(): $VSR_IDS"
 
 VR_IDS=$(cast call "$VAULT_REGISTRY" "getAllVaultIds()" --rpc-url "$RPC_URL")
 echo "   ✅ VaultRegistry getAllVaultIds(): $VR_IDS"
-echo ""
+echo " "
 
 # ✅ Configure ledger: allow GoldAssetToken to call updateBalanceFromContract
 echo "4️⃣  Configuring GoldAccountLedger balance updater..."
