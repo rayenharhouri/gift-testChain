@@ -36,7 +36,8 @@ contract DocumentRegistry is Ownable {
 
     struct Document {
         string documentId;
-        bytes32 fileHash;
+        string fileHash;
+        string offChainPath;
         string documentType;
         string format;
         string ownerEntityType;
@@ -62,6 +63,7 @@ contract DocumentRegistry is Ownable {
 
     mapping(string => Document) private documents;
     mapping(string => DocumentSet) private documentSets;
+    mapping(string => string) private documentToSet;
 
     // -------------------------------------------------------------------------
     // Events
@@ -69,7 +71,8 @@ contract DocumentRegistry is Ownable {
 
     event DocumentRegistered(
         string indexed documentId,
-        bytes32 indexed fileHash,
+        string indexed fileHash,
+        string offChainPath,
         string documentType,
         string format,
         string ownerEntityType,
@@ -89,7 +92,7 @@ contract DocumentRegistry is Ownable {
 
     event DocumentVerified(
         string indexed documentId,
-        bytes32 fileHash,
+        string fileHash,
         bool verified,
         uint256 timestamp
     );
@@ -133,36 +136,54 @@ contract DocumentRegistry is Ownable {
 
     function registerDocument(
         string memory documentId,
-        bytes32 fileHash,
+        string memory fileHash,
+        string memory offChainPath,
         string memory documentType,
         string memory format,
         string memory ownerEntityType,
-        string memory ownerEntityId
+        string memory ownerEntityId,
+        string memory setId
     ) external onlyPlatform {
         _registerDocument(
             documentId,
             fileHash,
+            offChainPath,
             documentType,
             format,
             ownerEntityType,
             ownerEntityId
         );
+        _addDocumentToSet(
+            setId,
+            documentId,
+            ownerEntityType,
+            ownerEntityId
+        );
     }
 
-    /// @notice Alias for API alignment: POST /documents/upload
+    /// @notice Optional setId adds the document to an existing set.
     function uploadDocument(
         string memory documentId,
-        bytes32 fileHash,
+        string memory fileHash,
+        string memory offChainPath,
         string memory documentType,
         string memory format,
         string memory ownerEntityType,
-        string memory ownerEntityId
+        string memory ownerEntityId,
+        string memory setId
     ) external onlyPlatform {
         _registerDocument(
             documentId,
             fileHash,
+            offChainPath,
             documentType,
             format,
+            ownerEntityType,
+            ownerEntityId
+        );
+        _addDocumentToSet(
+            setId,
+            documentId,
             ownerEntityType,
             ownerEntityId
         );
@@ -193,13 +214,15 @@ contract DocumentRegistry is Ownable {
         string memory ownerEntityType,
         string memory ownerEntityId,
         string[] memory documentIds,
-        bytes32[] memory fileHashes,
+        string[] memory fileHashes,
+        string[] memory offChainPaths,
         string[] memory documentTypes,
         string[] memory formats
     ) external onlyPlatform {
         require(documentIds.length > 0, "Empty documentIds");
         require(
             documentIds.length == fileHashes.length &&
+                documentIds.length == offChainPaths.length &&
                 documentIds.length == documentTypes.length &&
                 documentIds.length == formats.length,
             "Array length mismatch"
@@ -209,6 +232,7 @@ contract DocumentRegistry is Ownable {
             _registerDocument(
                 documentIds[i],
                 fileHashes[i],
+                offChainPaths[i],
                 documentTypes[i],
                 formats[i],
                 ownerEntityType,
@@ -231,7 +255,7 @@ contract DocumentRegistry is Ownable {
 
     function verifyDocument(
         string memory documentId,
-        bytes32 fileHash
+        string memory fileHash
     ) external view returns (bool) {
         return _verifyDocument(documentId, fileHash);
     }
@@ -239,7 +263,7 @@ contract DocumentRegistry is Ownable {
     /// @notice Optional logged verification for audit trails.
     function verifyDocumentAndLog(
         string memory documentId,
-        bytes32 fileHash
+        string memory fileHash
     ) external returns (bool verified) {
         verified = _verifyDocument(documentId, fileHash);
         emit DocumentVerified(documentId, fileHash, verified, block.timestamp);
@@ -289,7 +313,7 @@ contract DocumentRegistry is Ownable {
     /// @notice API alignment: GET /documents/{id}/hash
     function getDocumentHash(
         string memory documentId
-    ) external view returns (bytes32) {
+    ) external view returns (string memory) {
         require(documents[documentId].registeredAt != 0, "Document not found");
         return documents[documentId].fileHash;
     }
@@ -345,14 +369,15 @@ contract DocumentRegistry is Ownable {
 
     function _registerDocument(
         string memory documentId,
-        bytes32 fileHash,
+        string memory fileHash,
+        string memory offChainPath,
         string memory documentType,
         string memory format,
         string memory ownerEntityType,
         string memory ownerEntityId
     ) internal {
         require(bytes(documentId).length > 0, "Invalid documentId");
-        require(fileHash != bytes32(0), "Invalid fileHash");
+        require(bytes(fileHash).length > 0, "Invalid fileHash");
         require(bytes(documentType).length > 0, "Invalid documentType");
         require(bytes(format).length > 0, "Invalid format");
         require(bytes(ownerEntityType).length > 0, "Invalid ownerEntityType");
@@ -365,6 +390,7 @@ contract DocumentRegistry is Ownable {
         documents[documentId] = Document({
             documentId: documentId,
             fileHash: fileHash,
+            offChainPath: offChainPath,
             documentType: documentType,
             format: format,
             ownerEntityType: ownerEntityType,
@@ -377,6 +403,7 @@ contract DocumentRegistry is Ownable {
         emit DocumentRegistered(
             documentId,
             fileHash,
+            offChainPath,
             documentType,
             format,
             ownerEntityType,
@@ -384,6 +411,50 @@ contract DocumentRegistry is Ownable {
             block.timestamp,
             block.number
         );
+    }
+
+    function _addDocumentToSet(
+        string memory setId,
+        string memory documentId,
+        string memory ownerEntityType,
+        string memory ownerEntityId
+    ) internal {
+        if (bytes(documentToSet[documentId]).length != 0) {
+            revert("Document already in set");
+        }
+        if (bytes(setId).length == 0) {
+            return;
+        }
+
+        DocumentSet storage set = documentSets[setId];
+        require(set.registeredAt != 0, "Document set not found");
+        require(
+            keccak256(bytes(set.ownerEntityType)) ==
+                keccak256(bytes(ownerEntityType)) &&
+                keccak256(bytes(set.ownerEntityId)) ==
+                keccak256(bytes(ownerEntityId)),
+            "Set owner mismatch"
+        );
+
+        if (!_documentInSet(set.documentIds, documentId)) {
+            set.documentIds.push(documentId);
+            documentToSet[documentId] = setId;
+        }
+    }
+
+    function _documentInSet(
+        string[] storage documentIds,
+        string memory documentId
+    ) internal view returns (bool) {
+        for (uint256 i = 0; i < documentIds.length; i++) {
+            if (
+                keccak256(bytes(documentIds[i])) ==
+                keccak256(bytes(documentId))
+            ) {
+                return true;
+            }
+        }
+        return false;
     }
 
     function _registerDocumentSet(
@@ -407,6 +478,10 @@ contract DocumentRegistry is Ownable {
             Document storage doc = documents[documentIds[i]];
             require(doc.registeredAt != 0, "Document does not exist");
             require(doc.status == DocumentStatus.ACTIVE, "Document not active");
+            require(
+                bytes(documentToSet[documentIds[i]]).length == 0,
+                "Document already in set"
+            );
         }
 
         DocumentSet storage set = documentSets[setId];
@@ -417,6 +492,10 @@ contract DocumentRegistry is Ownable {
         set.documentIds = documentIds;
         set.status = SetStatus.ACTIVE;
         set.registeredAt = block.timestamp;
+
+        for (uint256 i = 0; i < documentIds.length; i++) {
+            documentToSet[documentIds[i]] = setId;
+        }
 
         emit DocumentSetRegistered(
             setId,
@@ -430,7 +509,7 @@ contract DocumentRegistry is Ownable {
 
     function _verifyDocument(
         string memory documentId,
-        bytes32 fileHash
+        string memory fileHash
     ) internal view returns (bool) {
         Document storage doc = documents[documentId];
         if (doc.registeredAt == 0) {
@@ -439,6 +518,7 @@ contract DocumentRegistry is Ownable {
         if (doc.status != DocumentStatus.ACTIVE) {
             return false;
         }
-        return doc.fileHash == fileHash;
+        return
+            keccak256(bytes(doc.fileHash)) == keccak256(bytes(fileHash));
     }
 }
