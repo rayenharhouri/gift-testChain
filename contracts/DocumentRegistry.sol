@@ -325,6 +325,13 @@ contract DocumentRegistry is Ownable {
         return documentSets[setId];
     }
 
+    function getDocumentSetRootHash(
+        string memory setId
+    ) external view returns (bytes32) {
+        require(documentSets[setId].registeredAt != 0, "Set not found");
+        return documentSets[setId].rootHash;
+    }
+
     // -------------------------------------------------------------------------
     // Status Management
     // -------------------------------------------------------------------------

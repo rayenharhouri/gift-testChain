@@ -2,7 +2,6 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import {IDocumentRegistry} from "./Interfaces/IDocumentRegistry.sol";
 import {IGoldAccountLedger} from "./Interfaces/IGoldAccountLedger.sol";
 import {IGoldAssetToken} from "./Interfaces/IGoldAssetToken.sol";
 import {IMemberRegistryExtended} from "./Interfaces/IMemberRegistryExtended.sol";
@@ -15,7 +14,6 @@ contract TransactionOrderBook is Ownable {
     uint256 public constant ROLE_PLATFORM = 1 << 6;
 
     IMemberRegistryExtended public memberRegistry;
-    IDocumentRegistry public documentRegistry;
     IGoldAccountLedger public accountLedger;
     IGoldAssetToken public goldAssetToken;
 
@@ -31,18 +29,12 @@ contract TransactionOrderBook is Ownable {
         TRANSFER,
         SALE,
         PURCHASE,
-        COLLATERAL,
-        PLEDGE,
-        RELEASE,
-        DELIVERY
+        COLLATERAL
     }
 
     enum TransactionStatus {
-        DRAFT,
         PENDING_PREPARATION,
-        PREPARED,
         PENDING_SIGNATURE,
-        SIGNED,
         PENDING_EXECUTION,
         EXECUTED,
         CANCELLED,
@@ -54,6 +46,11 @@ contract TransactionOrderBook is Ownable {
     // Structs
     // -------------------------------------------------------------------------
 
+    struct RequestedAsset {
+        string goldProductTypeId;
+        uint256 quantityGrams;
+    }
+
     struct TransactionOrder {
         string transactionRef;
         string transactionId;
@@ -64,14 +61,13 @@ contract TransactionOrderBook is Ownable {
         string senderIGAN;
         string receiverIGAN;
         uint256[] tokenIds;
-        uint256 totalWeightGrams;
-        uint256 totalFineWeightGrams;
+        RequestedAsset[] requestedAssets;
+        string valuationDate;
+        string valuationCurrency;
         uint256 transactionValue;
-        string currency;
-        bytes32 orderDataHash;
-        string documentSetId;
         uint256 createdAt;
         uint256 expiresAt;
+        uint256 executedAt;
         address createdBy;
     }
 
@@ -99,10 +95,12 @@ contract TransactionOrderBook is Ownable {
         string indexed transactionRef,
         string transactionId,
         TransactionType txType,
-        string senderIGAN,
-        string receiverIGAN,
         string initiatorGIC,
         string counterpartyGIC,
+        uint256 requestedAssetCount,
+        string valuationCurrency,
+        uint256 transactionValue,
+        TransactionStatus status,
         uint256 timestamp,
         uint256 expiresAt
     );
@@ -118,6 +116,8 @@ contract TransactionOrderBook is Ownable {
         address indexed signer,
         string signerUserId,
         string signerRole,
+        uint256 signaturesCollected,
+        uint256 signaturesRequired,
         uint256 timestamp
     );
 
@@ -168,10 +168,6 @@ contract TransactionOrderBook is Ownable {
         memberRegistry = IMemberRegistryExtended(_memberRegistry);
     }
 
-    function setDocumentRegistry(address _documentRegistry) external onlyOwner {
-        documentRegistry = IDocumentRegistry(_documentRegistry);
-    }
-
     function setGoldAccountLedger(address _accountLedger) external onlyOwner {
         accountLedger = IGoldAccountLedger(_accountLedger);
     }
@@ -203,15 +199,10 @@ contract TransactionOrderBook is Ownable {
         TransactionType txType,
         string memory initiatorGIC,
         string memory counterpartyGIC,
-        string memory senderIGAN,
-        string memory receiverIGAN,
-        uint256[] memory tokenIds,
-        uint256 totalWeightGrams,
-        uint256 totalFineWeightGrams,
+        RequestedAsset[] memory requestedAssets,
+        string memory valuationDate,
+        string memory valuationCurrency,
         uint256 transactionValue,
-        string memory currency,
-        bytes32 orderDataHash,
-        string memory documentSetId,
         uint256 expiresAt
     ) external callerNotBlacklisted returns (string memory txRef) {
         txRef = _createOrder(
@@ -220,49 +211,18 @@ contract TransactionOrderBook is Ownable {
             txType,
             initiatorGIC,
             counterpartyGIC,
-            senderIGAN,
-            receiverIGAN,
-            tokenIds,
-            totalWeightGrams,
-            totalFineWeightGrams,
+            requestedAssets,
+            valuationDate,
+            valuationCurrency,
             transactionValue,
-            currency,
-            orderDataHash,
-            documentSetId,
-            expiresAt
-        );
-    }
-
-    /// @notice Minimal API-friendly constructor: POST /transactions/create
-    function createOrderSimple(
-        string memory transactionRef,
-        TransactionType txType,
-        string memory senderIGAN,
-        string memory receiverIGAN,
-        uint256[] memory tokenIds,
-        uint256 expiresAt
-    ) external callerNotBlacklisted returns (string memory txRef) {
-        txRef = _createOrder(
-            transactionRef,
-            "",
-            txType,
-            "",
-            "",
-            senderIGAN,
-            receiverIGAN,
-            tokenIds,
-            0,
-            0,
-            0,
-            "",
-            bytes32(0),
-            "",
             expiresAt
         );
     }
 
     function prepareOrder(
         string memory txRef,
+        string memory senderIGAN,
+        string memory receiverIGAN,
         uint256[] memory tokenIds
     ) external callerNotBlacklisted {
         TransactionOrder storage order = orders[txRef];
@@ -275,28 +235,24 @@ contract TransactionOrderBook is Ownable {
         }
 
         require(
-            order.status == TransactionStatus.DRAFT ||
-                order.status == TransactionStatus.PENDING_PREPARATION,
+            order.status == TransactionStatus.PENDING_PREPARATION,
             "Invalid status"
         );
 
-        if (tokenIds.length > 0) {
-            order.tokenIds = tokenIds;
-        }
-        require(order.tokenIds.length > 0, "Missing tokenIds");
+        require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");
+        require(bytes(receiverIGAN).length > 0, "Invalid receiverIGAN");
+        order.senderIGAN = senderIGAN;
+        order.receiverIGAN = receiverIGAN;
+        _validateAccounts(senderIGAN, receiverIGAN);
 
-        order.status = TransactionStatus.PREPARED;
+        require(tokenIds.length > 0, "Missing tokenIds");
+        order.tokenIds = tokenIds;
+
+        order.status = TransactionStatus.PENDING_SIGNATURE;
         emit OrderPrepared(txRef, order.tokenIds.length, block.timestamp);
     }
 
     function signOrder(
-        string memory txRef,
-        bytes memory signature
-    ) external callerNotBlacklisted {
-        _signOrder(txRef, signature, "");
-    }
-
-    function signOrderWithRole(
         string memory txRef,
         bytes memory signature,
         string memory signerRole
@@ -314,7 +270,12 @@ contract TransactionOrderBook is Ownable {
             return;
         }
 
-        require(order.status == TransactionStatus.SIGNED, "Not signed");
+        require(
+            order.status == TransactionStatus.PENDING_EXECUTION,
+            "Not ready"
+        );
+        require(bytes(order.senderIGAN).length > 0, "Missing senderIGAN");
+        require(bytes(order.receiverIGAN).length > 0, "Missing receiverIGAN");
         require(order.tokenIds.length > 0, "Missing tokenIds");
 
         if (transferAssetsOnExecute) {
@@ -326,6 +287,7 @@ contract TransactionOrderBook is Ownable {
         }
 
         order.status = TransactionStatus.EXECUTED;
+        order.executedAt = block.timestamp;
         emit OrderExecuted(txRef, order.tokenIds.length, block.timestamp);
     }
 
@@ -333,41 +295,22 @@ contract TransactionOrderBook is Ownable {
         string memory txRef,
         string memory reason
     ) external callerNotBlacklisted {
-        TransactionOrder storage order = orders[txRef];
-        require(order.createdAt != 0, "Order not found");
-        require(
-            msg.sender == order.createdBy || _isPlatform(msg.sender),
-            "Not authorized"
-        );
-        require(
-            order.status != TransactionStatus.EXECUTED &&
-                order.status != TransactionStatus.CANCELLED &&
-                order.status != TransactionStatus.FAILED &&
-                order.status != TransactionStatus.EXPIRED,
-            "Already closed"
-        );
-
-        order.status = TransactionStatus.CANCELLED;
-        emit OrderCancelled(txRef, reason, block.timestamp);
+        _updateStatus(txRef, TransactionStatus.CANCELLED, reason);
     }
 
     function failOrder(
         string memory txRef,
         string memory reason
     ) external callerNotBlacklisted {
-        TransactionOrder storage order = orders[txRef];
-        require(order.createdAt != 0, "Order not found");
-        require(_isPlatform(msg.sender), "Not authorized");
-        require(
-            order.status != TransactionStatus.EXECUTED &&
-                order.status != TransactionStatus.CANCELLED &&
-                order.status != TransactionStatus.FAILED &&
-                order.status != TransactionStatus.EXPIRED,
-            "Already closed"
-        );
+        _updateStatus(txRef, TransactionStatus.FAILED, reason);
+    }
 
-        order.status = TransactionStatus.FAILED;
-        emit OrderFailed(txRef, reason, block.timestamp);
+    function updateOrderStatus(
+        string memory txRef,
+        TransactionStatus newStatus,
+        string memory reason
+    ) external callerNotBlacklisted {
+        _updateStatus(txRef, newStatus, reason);
     }
 
     // -------------------------------------------------------------------------
@@ -399,67 +342,171 @@ contract TransactionOrderBook is Ownable {
     // Internal helpers
     // -------------------------------------------------------------------------
 
+    function _updateStatus(
+        string memory txRef,
+        TransactionStatus newStatus,
+        string memory reason
+    ) internal {
+        TransactionOrder storage order = orders[txRef];
+        require(order.createdAt != 0, "Order not found");
+        require(
+            _callerIsParticipant(order) || _isPlatform(msg.sender),
+            "Not authorized"
+        );
+        if (_isExpired(order)) {
+            _expireOrder(order);
+            return;
+        }
+        _validateTransition(order.status, newStatus);
+
+        if (
+            newStatus == TransactionStatus.CANCELLED ||
+            newStatus == TransactionStatus.FAILED
+        ) {
+            require(bytes(reason).length > 0, "Reason required");
+        }
+
+        order.status = newStatus;
+        if (newStatus == TransactionStatus.EXECUTED) {
+            order.executedAt = block.timestamp;
+            emit OrderExecuted(txRef, order.tokenIds.length, block.timestamp);
+            return;
+        }
+        if (newStatus == TransactionStatus.CANCELLED) {
+            emit OrderCancelled(txRef, reason, block.timestamp);
+            return;
+        }
+        if (newStatus == TransactionStatus.FAILED) {
+            emit OrderFailed(txRef, reason, block.timestamp);
+            return;
+        }
+        if (newStatus == TransactionStatus.EXPIRED) {
+            emit OrderExpired(txRef, block.timestamp);
+            return;
+        }
+    }
+
+    function _validateTransition(
+        TransactionStatus currentStatus,
+        TransactionStatus newStatus
+    ) internal pure {
+        if (currentStatus == newStatus) {
+            return;
+        }
+        if (currentStatus == TransactionStatus.EXECUTED) {
+            revert("Already executed");
+        }
+        if (currentStatus == TransactionStatus.CANCELLED) {
+            revert("Already cancelled");
+        }
+        if (currentStatus == TransactionStatus.FAILED) {
+            revert("Already failed");
+        }
+        if (currentStatus == TransactionStatus.EXPIRED) {
+            revert("Already expired");
+        }
+
+        if (currentStatus == TransactionStatus.PENDING_PREPARATION) {
+            require(
+                newStatus == TransactionStatus.PENDING_SIGNATURE ||
+                    newStatus == TransactionStatus.CANCELLED ||
+                    newStatus == TransactionStatus.FAILED ||
+                    newStatus == TransactionStatus.EXPIRED,
+                "Invalid status change"
+            );
+            return;
+        }
+
+        if (currentStatus == TransactionStatus.PENDING_SIGNATURE) {
+            require(
+                newStatus == TransactionStatus.PENDING_EXECUTION ||
+                    newStatus == TransactionStatus.CANCELLED ||
+                    newStatus == TransactionStatus.FAILED ||
+                    newStatus == TransactionStatus.EXPIRED,
+                "Invalid status change"
+            );
+            return;
+        }
+
+        if (currentStatus == TransactionStatus.PENDING_EXECUTION) {
+            require(
+                newStatus == TransactionStatus.EXECUTED ||
+                    newStatus == TransactionStatus.CANCELLED ||
+                    newStatus == TransactionStatus.FAILED ||
+                    newStatus == TransactionStatus.EXPIRED,
+                "Invalid status change"
+            );
+            return;
+        }
+
+        revert("Invalid status change");
+    }
+
     function _createOrder(
         string memory transactionRef,
         string memory transactionId,
         TransactionType txType,
         string memory initiatorGIC,
         string memory counterpartyGIC,
-        string memory senderIGAN,
-        string memory receiverIGAN,
-        uint256[] memory tokenIds,
-        uint256 totalWeightGrams,
-        uint256 totalFineWeightGrams,
+        RequestedAsset[] memory requestedAssets,
+        string memory valuationDate,
+        string memory valuationCurrency,
         uint256 transactionValue,
-        string memory currency,
-        bytes32 orderDataHash,
-        string memory documentSetId,
         uint256 expiresAt
     ) internal returns (string memory txRef) {
         require(bytes(transactionRef).length > 0, "Invalid transactionRef");
         require(orders[transactionRef].createdAt == 0, "Order exists");
-        require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");
-        require(bytes(receiverIGAN).length > 0, "Invalid receiverIGAN");
+        require(bytes(initiatorGIC).length > 0, "Invalid initiatorGIC");
+        require(bytes(counterpartyGIC).length > 0, "Invalid counterpartyGIC");
+        require(requestedAssets.length > 0, "Missing requested assets");
+        require(bytes(valuationDate).length > 0, "Invalid valuationDate");
+        require(bytes(valuationCurrency).length > 0, "Invalid currency");
 
-        if (bytes(initiatorGIC).length > 0) {
+        for (uint256 i = 0; i < requestedAssets.length; i++) {
             require(
-                memberRegistry.getMemberStatus(initiatorGIC) == MEMBER_ACTIVE,
-                "Initiator not active"
+                bytes(requestedAssets[i].goldProductTypeId).length > 0,
+                "Invalid product type"
+            );
+            require(
+                requestedAssets[i].quantityGrams > 0,
+                "Invalid quantity"
             );
         }
-        if (bytes(counterpartyGIC).length > 0) {
-            require(
-                memberRegistry.getMemberStatus(counterpartyGIC) ==
-                    MEMBER_ACTIVE,
-                "Counterparty not active"
-            );
-        }
+
+        require(
+            memberRegistry.getMemberStatus(initiatorGIC) == MEMBER_ACTIVE,
+            "Initiator not active"
+        );
+        require(
+            memberRegistry.getMemberStatus(counterpartyGIC) == MEMBER_ACTIVE,
+            "Counterparty not active"
+        );
 
         if (expiresAt != 0) {
             require(expiresAt > block.timestamp, "Invalid expiresAt");
         }
 
-        _validateDocumentSet(documentSetId);
-        _validateAccounts(senderIGAN, receiverIGAN);
+        if (bytes(transactionId).length == 0) {
+            transactionId = transactionRef;
+        }
 
         orders[transactionRef] = TransactionOrder({
             transactionRef: transactionRef,
             transactionId: transactionId,
             txType: txType,
-            status: TransactionStatus.DRAFT,
+            status: TransactionStatus.PENDING_PREPARATION,
             initiatorGIC: initiatorGIC,
             counterpartyGIC: counterpartyGIC,
-            senderIGAN: senderIGAN,
-            receiverIGAN: receiverIGAN,
-            tokenIds: tokenIds,
-            totalWeightGrams: totalWeightGrams,
-            totalFineWeightGrams: totalFineWeightGrams,
+            senderIGAN: "",
+            receiverIGAN: "",
+            tokenIds: new uint256[](0),
+            requestedAssets: requestedAssets,
+            valuationDate: valuationDate,
+            valuationCurrency: valuationCurrency,
             transactionValue: transactionValue,
-            currency: currency,
-            orderDataHash: orderDataHash,
-            documentSetId: documentSetId,
             createdAt: block.timestamp,
             expiresAt: expiresAt,
+            executedAt: 0,
             createdBy: msg.sender
         });
 
@@ -467,10 +514,12 @@ contract TransactionOrderBook is Ownable {
             transactionRef,
             transactionId,
             txType,
-            senderIGAN,
-            receiverIGAN,
             initiatorGIC,
             counterpartyGIC,
+            requestedAssets.length,
+            valuationCurrency,
+            transactionValue,
+            TransactionStatus.PENDING_PREPARATION,
             block.timestamp,
             expiresAt
         );
@@ -493,8 +542,7 @@ contract TransactionOrderBook is Ownable {
         }
 
         require(
-            order.status == TransactionStatus.PREPARED ||
-                order.status == TransactionStatus.PENDING_SIGNATURE,
+            order.status == TransactionStatus.PENDING_SIGNATURE,
             "Invalid status"
         );
         require(!hasSigned[txRef][msg.sender], "Already signed");
@@ -512,9 +560,7 @@ contract TransactionOrderBook is Ownable {
         );
 
         if (orderSignatures[txRef].length >= minSignatures) {
-            order.status = TransactionStatus.SIGNED;
-        } else {
-            order.status = TransactionStatus.PENDING_SIGNATURE;
+            order.status = TransactionStatus.PENDING_EXECUTION;
         }
 
         emit OrderSigned(
@@ -522,19 +568,10 @@ contract TransactionOrderBook is Ownable {
             msg.sender,
             memberRegistry.addressToUserId(msg.sender),
             signerRole,
+            orderSignatures[txRef].length,
+            minSignatures,
             block.timestamp
         );
-    }
-
-    function _validateDocumentSet(string memory documentSetId) internal view {
-        if (bytes(documentSetId).length == 0) {
-            return;
-        }
-        require(
-            address(documentRegistry) != address(0),
-            "DocumentRegistry not set"
-        );
-        documentRegistry.getDocumentSetDetails(documentSetId);
     }
 
     function _validateAccounts(
@@ -622,7 +659,12 @@ contract TransactionOrderBook is Ownable {
     }
 
     function _expireOrder(TransactionOrder storage order) internal {
-        if (order.status == TransactionStatus.EXPIRED) {
+        if (
+            order.status == TransactionStatus.EXPIRED ||
+            order.status == TransactionStatus.EXECUTED ||
+            order.status == TransactionStatus.CANCELLED ||
+            order.status == TransactionStatus.FAILED
+        ) {
             return;
         }
         order.status = TransactionStatus.EXPIRED;
