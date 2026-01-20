@@ -12,7 +12,7 @@ import {IMemberRegistry} from "./Interfaces/IMemberRegistry.sol";
  * - Create and register gold accounts for active members
  * - Maintain per-account gold balance (units/tokens)
  * - Provide controlled balance mutation via:
- *   - PLATFORM / CUSTODIAN (admin path)
+ *   - GMO / VAULT (admin path)
  *   - Whitelisted contracts (system path)
  *
  * Design notes:
@@ -25,11 +25,14 @@ contract GoldAccountLedger is Ownable {
     // Constants & Types
     // -------------------------------------------------------------------------
 
-    /// @notice Bitmask for the PLATFORM role in the member registry.
-    uint256 public constant ROLE_PLATFORM = 1 << 6;
-
-    /// @notice Bitmask for the CUSTODIAN role in the member registry.
-    uint256 public constant ROLE_CUSTODIAN = 1 << 2;
+    /// @notice Role bitmasks aligned to the access matrix.
+    uint256 public constant ROLE_REFINER = 1 << 0;
+    uint256 public constant ROLE_MINTER = 1 << 1;
+    uint256 public constant ROLE_VAULT = (1 << 2) | (1 << 3);
+    uint256 public constant ROLE_GMO = (1 << 6) | (1 << 7);
+    uint256 public constant ROLE_TRADER = 1 << 8;
+    uint256 public constant ROLE_ACCOUNT_CREATOR =
+        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_VAULT | ROLE_GMO;
 
     /// @notice Member status value indicating an active member in IMemberRegistry.
     uint8 public constant MEMBER_ACTIVE = 1;
@@ -85,7 +88,7 @@ contract GoldAccountLedger is Ownable {
 
     /**
      * @notice Whitelisted contracts allowed to update balances via `updateBalanceFromContract`.
-     * @dev Set by PLATFORM via `setBalanceUpdater`.
+     * @dev Set by GMO via `setBalanceUpdater`.
      */
     mapping(address => bool) public balanceUpdaters;
 
@@ -124,21 +127,30 @@ contract GoldAccountLedger is Ownable {
     // Modifiers
     // -------------------------------------------------------------------------
 
-    /// @dev Restricts a function to addresses with PLATFORM role in `memberRegistry`.
-    modifier onlyPlatform() {
+    /// @dev Restricts a function to accounts allowed to create IGANs.
+    modifier onlyAccountCreator() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
-            "Not authorized: PLATFORM role required"
+            memberRegistry.isMemberInRole(msg.sender, ROLE_ACCOUNT_CREATOR),
+            "Not authorized: account creator role required"
         );
         _;
     }
 
-    /// @dev Restricts a function to addresses with PLATFORM or CUSTODIAN roles.
+    /// @dev Restricts a function to addresses with GMO or VAULT roles.
     modifier onlyAuthorized() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM) ||
-                memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
-            "Not authorized"
+            memberRegistry.isMemberInRole(msg.sender, ROLE_GMO) ||
+                memberRegistry.isMemberInRole(msg.sender, ROLE_VAULT),
+            "Not authorized: GMO or VAULT role required"
+        );
+        _;
+    }
+
+    /// @dev Restricts a function to GMO-only admin calls.
+    modifier onlyGmo() {
+        require(
+            memberRegistry.isMemberInRole(msg.sender, ROLE_GMO),
+            "Not authorized: GMO role required"
         );
         _;
     }
@@ -171,7 +183,7 @@ contract GoldAccountLedger is Ownable {
 
     /**
      * @notice Grants or revokes permission for an address to update balances via `updateBalanceFromContract`.
-     * @dev Callable only by PLATFORM. Intended for system contracts like GoldAssetToken.
+     * @dev Callable only by GMO. Intended for system contracts like GoldAssetToken.
      *
      * @param updater Address of the contract (or EOA) to update.
      * @param allowed Whether the address is allowed to call `updateBalanceFromContract`.
@@ -179,7 +191,7 @@ contract GoldAccountLedger is Ownable {
     function setBalanceUpdater(
         address updater,
         bool allowed
-    ) external onlyPlatform {
+    ) external onlyGmo {
         require(updater != address(0), "Invalid updater");
         balanceUpdaters[updater] = allowed;
         emit BalanceUpdaterSet(updater, allowed, block.timestamp);
@@ -198,7 +210,7 @@ contract GoldAccountLedger is Ownable {
         uint256 initialDeposit,
         string memory certificateAbsenceReason,
         address ownerAddress
-    ) external onlyPlatform returns (string memory) {
+    ) external onlyAccountCreator returns (string memory) {
         // Basic required fields
         require(bytes(igan).length > 0, "Invalid IGAN");
         require(bytes(memberGIC).length > 0, "Invalid memberGIC");
@@ -260,7 +272,7 @@ contract GoldAccountLedger is Ownable {
     /**
      * @notice Adjusts an account balance (admin / human path).
      * @dev
-     * - Callable by PLATFORM or CUSTODIAN.
+     * - Callable by GMO or VAULT.
      * - `delta` can be positive (credit) or negative (debit).
      * - Reverts if resulting balance would be negative.
      */

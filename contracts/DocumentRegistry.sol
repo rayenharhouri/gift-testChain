@@ -9,10 +9,19 @@ import {IMemberRegistry} from "./Interfaces/IMemberRegistry.sol";
 /// @notice On-chain registry for document hashes and document sets (Merkle roots).
 /// @dev Designed for audit/compliance anchoring; does not store file contents.
 contract DocumentRegistry is Ownable {
-    /// @notice Bitmask for the PLATFORM role in the member registry.
-    uint256 public constant ROLE_PLATFORM = 1 << 6;
+    /// @notice Role bitmasks aligned to the access matrix.
+    uint256 public constant ROLE_REFINER = 1 << 0;
+    uint256 public constant ROLE_MINTER = 1 << 1;
+    uint256 public constant ROLE_VAULT = (1 << 2) | (1 << 3);
+    uint256 public constant ROLE_LSP = 1 << 4;
+    uint256 public constant ROLE_GMO = (1 << 6) | (1 << 7);
+    uint256 public constant ROLE_TRADER = 1 << 8;
+    uint256 public constant ROLE_DOCUMENT_UPLOAD =
+        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_VAULT | ROLE_LSP | ROLE_GMO;
+    uint256 public constant ROLE_DOCUMENT_SET =
+        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_LSP | ROLE_GMO;
 
-    /// @notice MemberRegistry used to validate PLATFORM role.
+    /// @notice MemberRegistry used to validate role-based access.
     IMemberRegistry public memberRegistry;
 
     // -------------------------------------------------------------------------
@@ -113,10 +122,18 @@ contract DocumentRegistry is Ownable {
     // Modifiers
     // -------------------------------------------------------------------------
 
-    modifier onlyPlatform() {
+    modifier onlyDocumentUploader() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
-            "Not authorized: PLATFORM role required"
+            memberRegistry.isMemberInRole(msg.sender, ROLE_DOCUMENT_UPLOAD),
+            "Not authorized: document upload role required"
+        );
+        _;
+    }
+
+    modifier onlyDocumentSetRegistrar() {
+        require(
+            memberRegistry.isMemberInRole(msg.sender, ROLE_DOCUMENT_SET),
+            "Not authorized: document set role required"
         );
         _;
     }
@@ -143,7 +160,7 @@ contract DocumentRegistry is Ownable {
         string memory ownerEntityType,
         string memory ownerEntityId,
         string memory setId
-    ) external onlyPlatform {
+    ) external onlyDocumentUploader {
         _registerDocument(
             documentId,
             fileHash,
@@ -171,7 +188,7 @@ contract DocumentRegistry is Ownable {
         string memory ownerEntityType,
         string memory ownerEntityId,
         string memory setId
-    ) external onlyPlatform {
+    ) external onlyDocumentUploader {
         _registerDocument(
             documentId,
             fileHash,
@@ -195,7 +212,7 @@ contract DocumentRegistry is Ownable {
         string memory ownerEntityType,
         string memory ownerEntityId,
         string[] memory documentIds
-    ) external onlyPlatform {
+    ) external onlyDocumentSetRegistrar {
         _registerDocumentSet(
             setId,
             rootHash,
@@ -218,7 +235,7 @@ contract DocumentRegistry is Ownable {
         string[] memory offChainPaths,
         string[] memory documentTypes,
         string[] memory formats
-    ) external onlyPlatform {
+    ) external onlyDocumentUploader {
         require(documentIds.length > 0, "Empty documentIds");
         require(
             documentIds.length == fileHashes.length &&
@@ -339,7 +356,7 @@ contract DocumentRegistry is Ownable {
     function supersedeDocument(
         string memory documentId,
         string memory newDocumentId
-    ) external onlyPlatform {
+    ) external onlyDocumentUploader {
         Document storage doc = documents[documentId];
         require(doc.registeredAt != 0, "Document not found");
         require(doc.status == DocumentStatus.ACTIVE, "Document not active");
@@ -360,7 +377,7 @@ contract DocumentRegistry is Ownable {
     function revokeDocument(
         string memory documentId,
         string memory reason
-    ) external onlyPlatform {
+    ) external onlyDocumentUploader {
         Document storage doc = documents[documentId];
         require(doc.registeredAt != 0, "Document not found");
         require(doc.status != DocumentStatus.REVOKED, "Already revoked");

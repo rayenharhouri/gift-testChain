@@ -11,7 +11,12 @@ import {IMemberRegistryExtended} from "./Interfaces/IMemberRegistryExtended.sol"
 /// @dev Combines fields from v4.0 API schedule and roadmap/spec notes.
 contract TransactionOrderBook is Ownable {
     uint8 public constant MEMBER_ACTIVE = 1;
-    uint256 public constant ROLE_PLATFORM = 1 << 6;
+    uint256 public constant ROLE_REFINER = 1 << 0;
+    uint256 public constant ROLE_MINTER = 1 << 1;
+    uint256 public constant ROLE_TRADER = 1 << 8;
+    uint256 public constant ROLE_GMO = (1 << 6) | (1 << 7);
+    uint256 public constant ROLE_ORDER_CREATOR =
+        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_GMO;
 
     IMemberRegistryExtended public memberRegistry;
     IGoldAccountLedger public accountLedger;
@@ -150,6 +155,14 @@ contract TransactionOrderBook is Ownable {
         _;
     }
 
+    modifier onlyOrderCreator() {
+        require(
+            memberRegistry.isMemberInRole(msg.sender, ROLE_ORDER_CREATOR),
+            "Not authorized: order creator role required"
+        );
+        _;
+    }
+
     // -------------------------------------------------------------------------
     // Constructor
     // -------------------------------------------------------------------------
@@ -204,7 +217,7 @@ contract TransactionOrderBook is Ownable {
         string memory valuationCurrency,
         uint256 transactionValue,
         uint256 expiresAt
-    ) external callerNotBlacklisted returns (string memory txRef) {
+    ) external callerNotBlacklisted onlyOrderCreator returns (string memory txRef) {
         txRef = _createOrder(
             transactionRef,
             transactionId,
@@ -350,7 +363,7 @@ contract TransactionOrderBook is Ownable {
         TransactionOrder storage order = orders[txRef];
         require(order.createdAt != 0, "Order not found");
         require(
-            _callerIsParticipant(order) || _isPlatform(msg.sender),
+            _callerIsParticipant(order) || _isGmo(msg.sender),
             "Not authorized"
         );
         if (_isExpired(order)) {
@@ -674,7 +687,7 @@ contract TransactionOrderBook is Ownable {
     function _callerIsParticipant(
         TransactionOrder storage order
     ) internal view returns (bool) {
-        if (_isPlatform(msg.sender)) {
+        if (_isGmo(msg.sender)) {
             return true;
         }
         string memory memberGIC = memberRegistry.addressToMemberGIC(msg.sender);
@@ -687,7 +700,7 @@ contract TransactionOrderBook is Ownable {
             keccak256(bytes(order.counterpartyGIC)));
     }
 
-    function _isPlatform(address account) internal view returns (bool) {
-        return memberRegistry.isMemberInRole(account, ROLE_PLATFORM);
+    function _isGmo(address account) internal view returns (bool) {
+        return memberRegistry.isMemberInRole(account, ROLE_GMO);
     }
 }

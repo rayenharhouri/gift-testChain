@@ -4,15 +4,22 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MemberRegistry is Ownable {
-    // Role constants
+    // Role constants (matrix-aligned names + legacy bits)
     uint256 constant ROLE_REFINER = 1 << 0;
     uint256 constant ROLE_MINTER = 1 << 1;
-    uint256 constant ROLE_CUSTODIAN = 1 << 2;
-    uint256 constant ROLE_VAULT_OP = 1 << 3;
+    uint256 constant ROLE_CUSTODIAN = 1 << 2; // legacy bit for custody
+    uint256 constant ROLE_VAULT_OP = 1 << 3; // legacy bit for vault ops
     uint256 constant ROLE_LSP = 1 << 4;
     uint256 constant ROLE_AUDITOR = 1 << 5;
-    uint256 constant ROLE_PLATFORM = 1 << 6;
-    uint256 constant ROLE_GOVERNANCE = 1 << 7;
+    uint256 constant ROLE_PLATFORM = 1 << 6; // legacy bit for admin
+    uint256 constant ROLE_GOVERNANCE = 1 << 7; // legacy bit for admin
+    uint256 constant ROLE_TRADER = 1 << 8;
+
+    // Matrix role aliases
+    uint256 constant ROLE_VAULT = ROLE_CUSTODIAN | ROLE_VAULT_OP;
+    uint256 constant ROLE_GMO = ROLE_PLATFORM | ROLE_GOVERNANCE;
+    uint256 constant ROLE_USER_ADMIN =
+        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_VAULT | ROLE_LSP | ROLE_GMO;
 
     // Enums
     enum MemberType {
@@ -124,7 +131,7 @@ contract MemberRegistry is Ownable {
 
     // Constructor
     constructor() Ownable(msg.sender) {
-        // Create PLATFORM member with all roles for deployer
+        // Create GMO admin member (GIC: PLATFORM) with all roles for deployer
         Member memory platformMember = Member({
             memberGIC: "PLATFORM",
             memberType: MemberType.INSTITUTION,
@@ -134,6 +141,7 @@ contract MemberRegistry is Ownable {
             memberHash: keccak256("platform"),
             roles: ROLE_REFINER |
                 ROLE_MINTER |
+                ROLE_TRADER |
                 ROLE_CUSTODIAN |
                 ROLE_VAULT_OP |
                 ROLE_LSP |
@@ -180,18 +188,18 @@ contract MemberRegistry is Ownable {
     }
 
     // Modifiers
-    modifier onlyGovernance() {
+    modifier onlyGmo() {
         require(
-            isMemberInRole(msg.sender, ROLE_GOVERNANCE),
-            "Not authorized: GOVERNANCE role required"
+            isMemberInRole(msg.sender, ROLE_GMO),
+            "Not authorized: GMO role required"
         );
         _;
     }
 
-    modifier onlyPlatformAdmin() {
+    modifier onlyUserAdmin() {
         require(
-            isMemberInRole(msg.sender, ROLE_PLATFORM),
-            "Not authorized: PLATFORM role required"
+            isMemberInRole(msg.sender, ROLE_USER_ADMIN),
+            "Not authorized: user admin role required"
         );
         _;
     }
@@ -230,7 +238,7 @@ contract MemberRegistry is Ownable {
 
     function addToBlacklist(
         address account
-    ) external onlyPlatformAdmin returns (bool) {
+    ) external onlyGmo returns (bool) {
         require(account != address(0), "Invalid address");
         blacklisted[account] = true;
         emit BlacklistUpdated(account, true, msg.sender, block.timestamp);
@@ -239,7 +247,7 @@ contract MemberRegistry is Ownable {
 
     function removeFromBlacklist(
         address account
-    ) external onlyPlatformAdmin returns (bool) {
+    ) external onlyGmo returns (bool) {
         require(account != address(0), "Invalid address");
         blacklisted[account] = false;
         emit BlacklistUpdated(account, false, msg.sender, block.timestamp);
@@ -252,7 +260,7 @@ contract MemberRegistry is Ownable {
     function setBlacklisted(
         address account,
         bool status
-    ) external onlyPlatformAdmin returns (bool) {
+    ) external onlyGmo returns (bool) {
         require(account != address(0), "Invalid address");
         blacklisted[account] = status;
         emit BlacklistUpdated(account, status, msg.sender, block.timestamp);
@@ -270,7 +278,7 @@ contract MemberRegistry is Ownable {
         bytes32 memberHash,
         address userAddress,
         uint256 role
-    ) external onlyPlatformAdmin callerNotBlacklisted notBlacklisted(userAddress) returns (bool) {
+    ) external onlyGmo callerNotBlacklisted notBlacklisted(userAddress) returns (bool) {
         require(members[memberGIC].createdAt == 0, "Member already exists");
         require(bytes(memberGIC).length > 0, "Invalid member GIC");
         require(userAddress != address(0), "Invalid user address");
@@ -307,7 +315,7 @@ contract MemberRegistry is Ownable {
      */
     function approveMember(
         string memory memberGIC
-    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
+    ) external onlyGmo memberExists(memberGIC) returns (bool) {
         require(
             members[memberGIC].status == MemberStatus.PENDING,
             "Member not pending"
@@ -326,7 +334,7 @@ contract MemberRegistry is Ownable {
     function suspendMember(
         string memory memberGIC,
         string memory reason
-    ) external onlyPlatformAdmin memberExists(memberGIC) returns (bool) {
+    ) external onlyGmo memberExists(memberGIC) returns (bool) {
         require(
             members[memberGIC].status != MemberStatus.SUSPENDED,
             "Member already suspended"
@@ -344,7 +352,7 @@ contract MemberRegistry is Ownable {
      */
     function terminateMember(
         string memory memberGIC
-    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
+    ) external onlyGmo memberExists(memberGIC) returns (bool) {
         members[memberGIC].status = MemberStatus.TERMINATED;
         members[memberGIC].updatedAt = block.timestamp;
         return true;
@@ -355,14 +363,14 @@ contract MemberRegistry is Ownable {
     /**
      * @dev Update a member role bit (grant/revoke) in one function.
      * @param memberGIC Member identifier.
-     * @param role Bitmask role to change (e.g., ROLE_CUSTODIAN).
+     * @param role Bitmask role to change (e.g., ROLE_VAULT).
      * @param enabled true => grant, false => revoke.
      */
     function setRole(
         string memory memberGIC,
         uint256 role,
         bool enabled
-    ) external onlyGovernance memberExists(memberGIC) returns (bool) {
+    ) external onlyGmo memberExists(memberGIC) returns (bool) {
         require(role != 0, "Invalid role");
         // Optional: only allow editing ACTIVE members (matches old assignRole behavior)
         require(
@@ -390,7 +398,7 @@ contract MemberRegistry is Ownable {
     function registerUser(
         string memory userId,
         bytes32 userHash
-    ) external onlyPlatformAdmin callerNotBlacklisted returns (bool) {
+    ) external onlyUserAdmin callerNotBlacklisted returns (bool) {
         require(users[userId].createdAt == 0, "User already exists");
         require(bytes(userId).length > 0, "Invalid user ID");
 
@@ -421,7 +429,7 @@ contract MemberRegistry is Ownable {
         string memory memberGIC
     )
         external
-        onlyPlatformAdmin
+        onlyUserAdmin
         userExists(userId)
         memberExists(memberGIC)
         returns (bool)
@@ -443,7 +451,7 @@ contract MemberRegistry is Ownable {
     function addUserAdminAddress(
         string memory userId,
         address adminAddress
-    ) external onlyPlatformAdmin userExists(userId) returns (bool) {
+    ) external onlyGmo userExists(userId) returns (bool) {
         require(adminAddress != address(0), "Invalid address");
 
         users[userId].adminAddresses.push(adminAddress);
@@ -456,7 +464,7 @@ contract MemberRegistry is Ownable {
      */
     function suspendUser(
         string memory userId
-    ) external onlyPlatformAdmin userExists(userId) returns (bool) {
+    ) external onlyGmo userExists(userId) returns (bool) {
         users[userId].status = UserStatus.SUSPENDED;
         return true;
     }
@@ -466,7 +474,7 @@ contract MemberRegistry is Ownable {
      */
     function activateUser(
         string memory userId
-    ) external onlyPlatformAdmin userExists(userId) returns (bool) {
+    ) external onlyGmo userExists(userId) returns (bool) {
         users[userId].status = UserStatus.ACTIVE;
         return true;
     }
@@ -554,8 +562,8 @@ contract MemberRegistry is Ownable {
     ) external returns (bool) {
         // Allow owner to link addresses during bootstrap
         require(
-            msg.sender == owner() || isMemberInRole(msg.sender, ROLE_PLATFORM),
-            "Not authorized: PLATFORM role required"
+            msg.sender == owner() || isMemberInRole(msg.sender, ROLE_GMO),
+            "Not authorized: GMO role required"
         );
         addressToMemberGIC[addr] = memberGIC;
         return true;

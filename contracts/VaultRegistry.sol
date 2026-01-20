@@ -11,9 +11,9 @@ import "./VaultSiteRegistry.sol";
 ///      This contract handles creation and status updates. Inventory levels and valuations
 ///      are computed off-chain from events and other contracts (GoldAssetToken, GoldAccountLedger).
 contract VaultRegistry is Ownable {
-    // Role constants from MemberRegistry
-    uint256 constant ROLE_PLATFORM = 1 << 6;
-    uint256 constant ROLE_VAULT_OP = 1 << 3;
+    // Role constants from MemberRegistry (matrix-aligned)
+    uint256 constant ROLE_VAULT = (1 << 2) | (1 << 3);
+    uint256 constant ROLE_GMO = (1 << 6) | (1 << 7);
 
     /// @notice Status of a vault as per the platform business rules.
     enum VaultStatus {
@@ -67,7 +67,7 @@ contract VaultRegistry is Ownable {
     /// @param vaultDimensions Human-readable dimensions of the vault.
     /// @param vaultGoldCapacityKg Maximum designed gold capacity in kilograms.
     /// @param vaultStatus Initial status of the vault.
-    /// @param createdBy Address that created the vault (PLATFORM or VAULT_OP).
+    /// @param createdBy Address that created the vault (GMO or VAULT).
     /// @param timestamp Block timestamp at creation.
     event VaultCreated(
         string indexed vaultId,
@@ -100,17 +100,11 @@ contract VaultRegistry is Ownable {
         uint256 timestamp
     );
 
-    /// @dev Restricts calls to PLATFORM or VAULT_OP roles as defined in MemberRegistry.
-    modifier onlyPlatformOrVaultOp() {
-        bool isPlatform = memberRegistry.isMemberInRole(
-            msg.sender,
-            ROLE_PLATFORM
-        );
-        bool isVaultOp = memberRegistry.isMemberInRole(
-            msg.sender,
-            ROLE_VAULT_OP
-        );
-        require(isPlatform || isVaultOp, "Not authorized");
+    /// @dev Restricts calls to VAULT or GMO roles as defined in MemberRegistry.
+    modifier onlyVaultOrGmo() {
+        bool isVault = memberRegistry.isMemberInRole(msg.sender, ROLE_VAULT);
+        bool isGmo = memberRegistry.isMemberInRole(msg.sender, ROLE_GMO);
+        require(isVault || isGmo, "Not authorized");
         _;
     }
 
@@ -156,7 +150,7 @@ contract VaultRegistry is Ownable {
         uint256 vaultGoldCapacityKg,
         VaultStatus initialStatus,
         string memory lastAuditDate
-    ) external onlyPlatformOrVaultOp returns (bool success) {
+    ) external onlyVaultOrGmo returns (bool success) {
         require(bytes(vaultSiteId).length > 0, "Invalid vault_site_id");
         require(
             vaultSiteRegistry.vaultSiteExistsView(vaultSiteId),
@@ -216,7 +210,7 @@ contract VaultRegistry is Ownable {
         VaultStatus newStatus,
         string memory reason,
         string memory lastAuditDate
-    ) external onlyPlatformOrVaultOp vaultExists(vaultId) returns (bool success) {
+    ) external onlyVaultOrGmo vaultExists(vaultId) returns (bool success) {
         Vault storage v = vaults[vaultId];
 
         VaultStatus previousStatus = v.status;

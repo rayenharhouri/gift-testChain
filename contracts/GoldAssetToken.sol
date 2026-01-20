@@ -10,10 +10,12 @@ import "./Interfaces/IMemberRegistry.sol";
 contract GoldAssetToken is ERC1155, Ownable {
     using Strings for uint256;
 
-    // Role constants
+    // Role constants aligned to the access matrix
     uint256 constant ROLE_REFINER = 1 << 0;
-    uint256 constant ROLE_CUSTODIAN = 1 << 2;
-    uint256 constant ROLE_PLATFORM = 1 << 6;
+    uint256 constant ROLE_MINTER = 1 << 1;
+    uint256 constant ROLE_VAULT = (1 << 2) | (1 << 3);
+    uint256 constant ROLE_LSP = 1 << 4;
+    uint256 constant ROLE_GMO = (1 << 6) | (1 << 7);
 
     // Enums
     enum AssetStatus {
@@ -121,27 +123,36 @@ contract GoldAssetToken is ERC1155, Ownable {
     );
 
     // Modifiers
-    modifier onlyRefiner() {
+    modifier onlyRefinerOrMinter() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_REFINER),
-            "Not authorized: REFINER role required"
+            memberRegistry.isMemberInRole(
+                msg.sender,
+                ROLE_REFINER | ROLE_MINTER
+            ),
+            "Not authorized: REFINER or MINTER role required"
         );
         _;
     }
 
-    modifier onlyOwnerOrCustodian(uint256 tokenId) {
+    modifier onlyAssetOperator(uint256 tokenId) {
+        if (assetOwner[tokenId] == msg.sender) {
+            _;
+            return;
+        }
         require(
-            assetOwner[tokenId] == msg.sender ||
-                memberRegistry.isMemberInRole(msg.sender, ROLE_CUSTODIAN),
-            "Not authorized: Owner or CUSTODIAN role required"
+            memberRegistry.isMemberInRole(
+                msg.sender,
+                ROLE_REFINER | ROLE_MINTER | ROLE_VAULT | ROLE_LSP
+            ),
+            "Not authorized: asset operator role required"
         );
         _;
     }
 
-    modifier onlyAdmin() {
+    modifier onlyGmo() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
-            "Not authorized: PLATFORM role required"
+            memberRegistry.isMemberInRole(msg.sender, ROLE_GMO),
+            "Not authorized: GMO role required"
         );
         _;
     }
@@ -194,7 +205,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         string memory traceabilityGIC,
         bool certified,
         string memory warrantId
-    ) external onlyRefiner returns (uint256) {
+    ) external onlyRefinerOrMinter returns (uint256) {
         require(to != address(0), "Invalid owner");
         require(bytes(accountId).length > 0, "Invalid accountId");
 
@@ -266,7 +277,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 tokenId,
         string memory accountId, // kept for ABI compatibility, ignored
         string memory burnReason
-    ) external onlyOwnerOrCustodian(tokenId) {
+    ) external onlyRefinerOrMinter {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         require(
             assets[tokenId].status != AssetStatus.BURNED,
@@ -310,7 +321,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 tokenId,
         AssetStatus newStatus,
         string memory reason
-    ) external onlyOwnerOrCustodian(tokenId) {
+    ) external onlyAssetOperator(tokenId) {
         require(
             assets[tokenId].status != AssetStatus.BURNED,
             "Cannot update burned asset"
@@ -339,7 +350,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 tokenId,
         address toParty,
         string memory custodyType
-    ) external onlyOwnerOrCustodian(tokenId) {
+    ) external onlyAssetOperator(tokenId) {
         address fromParty = assetOwner[tokenId];
         emit CustodyChanged(
             tokenId,
@@ -421,7 +432,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         return string(abi.encodePacked("ipfs://", assets[tokenId].tokenId));
     }
     /**
-     * @dev Force transfer for compliance (PLATFORM only).
+     * @dev Force transfer for compliance (GMO only).
      *      blacklist
      *      logic via the overridden _update hook.
      */
@@ -437,14 +448,14 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     /**
-     * @dev Force transfer for compliance (PLATFORM only).
+     * @dev Force transfer for compliance (GMO only).
      *      blacklist
      *      logic via the overridden _update hook.
      */
     function forceTransfer(uint256 tokenId, address from, address to, string memory reason)
         external
         callerNotBlacklisted
-        onlyAdmin
+        onlyGmo
     {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         require(assetOwner[tokenId] == from, "Invalid from address");
@@ -461,14 +472,14 @@ contract GoldAssetToken is ERC1155, Ownable {
     /**
      * @dev Add address to blacklist (admin only).
      */
-    function addToBlacklist(address account) external onlyAdmin {
+    function addToBlacklist(address account) external onlyGmo {
         memberRegistry.isBlacklisted(account);
     }
 
     /**
      * @dev Remove address from blacklist (admin only).
      */
-    function removeFromBlacklist(address account) external onlyAdmin {
+    function removeFromBlacklist(address account) external onlyGmo {
         memberRegistry.isBlacklisted(account);
     }
 
@@ -507,7 +518,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         if (isNormalTransfer) {
             isForceTransfer = memberRegistry.isMemberInRole(
                 msg.sender,
-                ROLE_PLATFORM
+                ROLE_GMO
             );
 
             if (!isForceTransfer) {

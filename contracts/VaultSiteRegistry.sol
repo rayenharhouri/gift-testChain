@@ -7,10 +7,11 @@ import "./Interfaces/IMemberRegistry.sol";
 /// @title VaultSiteRegistry
 /// @notice On-chain registry for physical vault sites used by the GIFT platform.
 /// @dev Each vault site is owned by a member (memberGIC) registered in MemberRegistry.
-///      Creation is restricted to PLATFORM admins. All other lifecycle changes are
+///      Creation is restricted to VAULT/GMO roles. All other lifecycle changes are
 ///      off-chain for now and can be added later as needed.
 contract VaultSiteRegistry is Ownable {
-    uint256 constant ROLE_PLATFORM = 1 << 6;
+    uint256 constant ROLE_VAULT = (1 << 2) | (1 << 3);
+    uint256 constant ROLE_GMO = (1 << 6) | (1 << 7);
     uint8 constant MEMBER_ACTIVE = 1;
 
     /// @notice Immutable information and core attributes of a vault site.
@@ -82,11 +83,12 @@ contract VaultSiteRegistry is Ownable {
         uint256 timestamp
     );
 
-    /// @dev Restricts calls to addresses with ROLE_PLATFORM in MemberRegistry.
-    modifier onlyPlatformAdmin() {
+    /// @dev Restricts calls to VAULT or GMO roles in MemberRegistry.
+    modifier onlyVaultOrGmo() {
         require(
-            memberRegistry.isMemberInRole(msg.sender, ROLE_PLATFORM),
-            "Not authorized: PLATFORM role required"
+            memberRegistry.isMemberInRole(msg.sender, ROLE_VAULT) ||
+                memberRegistry.isMemberInRole(msg.sender, ROLE_GMO),
+            "Not authorized: VAULT or GMO role required"
         );
         _;
     }
@@ -156,7 +158,7 @@ contract VaultSiteRegistry is Ownable {
         string memory insuranceDocumentationSodId,
         string memory auditDocumentationSodId,
         string memory lastAuditDate
-    ) external onlyPlatformAdmin returns (bool success) {
+    ) external onlyVaultOrGmo returns (bool success) {
         require(bytes(vaultSiteId).length > 0, "Invalid vault_site_id");
         require(
             vaultSites[vaultSiteId].createdAt == 0,
