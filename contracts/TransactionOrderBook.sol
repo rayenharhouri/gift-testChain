@@ -212,6 +212,7 @@ contract TransactionOrderBook is Ownable {
         TransactionType txType,
         string memory initiatorGIC,
         string memory counterpartyGIC,
+        uint256[] memory tokenIds,
         RequestedAsset[] memory requestedAssets,
         string memory valuationDate,
         string memory valuationCurrency,
@@ -224,6 +225,7 @@ contract TransactionOrderBook is Ownable {
             txType,
             initiatorGIC,
             counterpartyGIC,
+            tokenIds,
             requestedAssets,
             valuationDate,
             valuationCurrency,
@@ -258,8 +260,11 @@ contract TransactionOrderBook is Ownable {
         order.receiverIGAN = receiverIGAN;
         _validateAccounts(senderIGAN, receiverIGAN);
 
-        require(tokenIds.length > 0, "Missing tokenIds");
-        order.tokenIds = tokenIds;
+        if (tokenIds.length > 0) {
+            order.tokenIds = tokenIds;
+        } else {
+            require(order.tokenIds.length > 0, "Missing tokenIds");
+        }
 
         order.status = TransactionStatus.PENDING_SIGNATURE;
         emit OrderPrepared(txRef, order.tokenIds.length, block.timestamp);
@@ -461,6 +466,7 @@ contract TransactionOrderBook is Ownable {
         TransactionType txType,
         string memory initiatorGIC,
         string memory counterpartyGIC,
+        uint256[] memory tokenIds,
         RequestedAsset[] memory requestedAssets,
         string memory valuationDate,
         string memory valuationCurrency,
@@ -512,7 +518,7 @@ contract TransactionOrderBook is Ownable {
             counterpartyGIC: counterpartyGIC,
             senderIGAN: "",
             receiverIGAN: "",
-            tokenIds: new uint256[](0),
+            tokenIds: tokenIds,
             requestedAssets: requestedAssets,
             valuationDate: valuationDate,
             valuationCurrency: valuationCurrency,
