@@ -617,19 +617,6 @@ contract TransactionOrderBook is Ownable {
 
         string memory memberGIC = memberRegistry.addressToMemberGIC(msg.sender);
         require(bytes(memberGIC).length > 0, "Not authorized");
-        if (isInitiator) {
-            require(
-                keccak256(bytes(memberGIC)) ==
-                    keccak256(bytes(order.initiatorGIC)),
-                "Not initiator"
-            );
-        } else {
-            require(
-                keccak256(bytes(memberGIC)) ==
-                    keccak256(bytes(order.counterpartyGIC)),
-                "Not counterparty"
-            );
-        }
 
         require(!hasSigned[txRef][signerRole], "Already signed");
 
