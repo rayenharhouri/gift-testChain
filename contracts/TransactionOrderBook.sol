@@ -25,6 +25,9 @@ contract TransactionOrderBook is Ownable {
     uint256 public minSignatures = 1;
     bool public transferAssetsOnExecute = false;
     bool public updateLedgerOnExecute = false;
+    string public constant initiator = "initiator";
+    string public constant counterparty = "counterparty";
+
 
     // -------------------------------------------------------------------------
     // Enums
@@ -41,6 +44,7 @@ contract TransactionOrderBook is Ownable {
         PENDING_PREPARATION,
         PENDING_SIGNATURE,
         PENDING_EXECUTION,
+        PENDING_COUNTERPARTY,
         EXECUTED,
         CANCELLED,
         FAILED,
@@ -90,7 +94,7 @@ contract TransactionOrderBook is Ownable {
 
     mapping(string => TransactionOrder) private orders;
     mapping(string => Signature[]) private orderSignatures;
-    mapping(string => mapping(address => bool)) private hasSigned;
+    mapping(string => mapping(string => bool)) private hasSigned;
 
     // -------------------------------------------------------------------------
     // Events
@@ -217,8 +221,15 @@ contract TransactionOrderBook is Ownable {
         string memory valuationDate,
         string memory valuationCurrency,
         uint256 transactionValue,
-        uint256 expiresAt
+        uint256 expiresAt,
+        string memory senderIGAN,
+        string memory receiverIGAN
     ) external callerNotBlacklisted onlyOrderCreator returns (string memory txRef) {
+        TransactionOrder storage order = orders[txRef];
+        require(order.createdAt != 0, "Order not found");
+        require(_callerIsParticipant(order), "Not authorized");
+        require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");
+        require(bytes(receiverIGAN).length > 0, "Invalid receiverIGAN");
         txRef = _createOrder(
             transactionRef,
             transactionId,
@@ -230,7 +241,9 @@ contract TransactionOrderBook is Ownable {
             valuationDate,
             valuationCurrency,
             transactionValue,
-            expiresAt
+            expiresAt,
+            senderIGAN,
+            receiverIGAN
         );
     }
 
@@ -250,7 +263,7 @@ contract TransactionOrderBook is Ownable {
         }
 
         require(
-            order.status == TransactionStatus.PENDING_PREPARATION,
+            order.status == TransactionStatus.PENDING_PREPARATION,//PENDING_PREPARATION
             "Invalid status"
         );
 
@@ -471,7 +484,9 @@ contract TransactionOrderBook is Ownable {
         string memory valuationDate,
         string memory valuationCurrency,
         uint256 transactionValue,
-        uint256 expiresAt
+        uint256 expiresAt,
+        string memory senderIGAN,
+        string memory receiverIGAN
     ) internal returns (string memory txRef) {
         require(bytes(transactionRef).length > 0, "Invalid transactionRef");
         require(orders[transactionRef].createdAt == 0, "Order exists");
@@ -513,11 +528,11 @@ contract TransactionOrderBook is Ownable {
             transactionRef: transactionRef,
             transactionId: transactionId,
             txType: txType,
-            status: TransactionStatus.PENDING_PREPARATION,
+            status: TransactionStatus.PENDING_SIGNATURE, //PENDING_PREPARATION
             initiatorGIC: initiatorGIC,
             counterpartyGIC: counterpartyGIC,
-            senderIGAN: "",
-            receiverIGAN: "",
+            senderIGAN: senderIGAN,
+            receiverIGAN: receiverIGAN,
             tokenIds: tokenIds,
             requestedAssets: requestedAssets,
             valuationDate: valuationDate,
@@ -538,7 +553,7 @@ contract TransactionOrderBook is Ownable {
             requestedAssets.length,
             valuationCurrency,
             transactionValue,
-            TransactionStatus.PENDING_PREPARATION,
+            TransactionStatus.PENDING_SIGNATURE, //PENDING_PREPARATION
             block.timestamp,
             expiresAt
         );
@@ -546,12 +561,14 @@ contract TransactionOrderBook is Ownable {
         return transactionRef;
     }
 
+
     function _signOrder(
         string memory txRef,
         bytes memory signature,
         string memory signerRole
     ) internal {
         TransactionOrder storage order = orders[txRef];
+        _isGmo(msg.sender);
         require(order.createdAt != 0, "Order not found");
         require(_callerIsParticipant(order), "Not authorized");
 
@@ -564,10 +581,15 @@ contract TransactionOrderBook is Ownable {
             order.status == TransactionStatus.PENDING_SIGNATURE,
             "Invalid status"
         );
-        require(!hasSigned[txRef][msg.sender], "Already signed");
+        require(!hasSigned[txRef][signerRole], "Already signed"); //not the same role , initiator has to be GMO , counterParty has to be receiver (GMO) 
         require(signature.length > 0, "Invalid signature");
 
-        hasSigned[txRef][msg.sender] = true;
+        if (keccak256(bytes(signerRole)) == keccak256(bytes(initiator))) {
+            order.status == TransactionStatus.PENDING_COUNTERPARTY;
+        } else if (keccak256(bytes(signerRole)) == keccak256(bytes(counterparty))) {
+            order.status = TransactionStatus.PENDING_EXECUTION;
+        }
+        hasSigned[txRef][signerRole] = true;
         orderSignatures[txRef].push(
             Signature({
                 signer: msg.sender,
