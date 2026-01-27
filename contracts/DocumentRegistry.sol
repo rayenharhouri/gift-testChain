@@ -172,9 +172,7 @@ contract DocumentRegistry is Ownable {
         );
         _addDocumentToSet(
             setId,
-            documentId,
-            ownerEntityType,
-            ownerEntityId
+            documentId
         );
     }
 
@@ -200,9 +198,7 @@ contract DocumentRegistry is Ownable {
         );
         _addDocumentToSet(
             setId,
-            documentId,
-            ownerEntityType,
-            ownerEntityId
+            documentId
         );
     }
 
@@ -439,9 +435,7 @@ contract DocumentRegistry is Ownable {
 
     function _addDocumentToSet(
         string memory setId,
-        string memory documentId,
-        string memory ownerEntityType,
-        string memory ownerEntityId
+        string memory documentId
     ) internal {
         if (bytes(documentToSet[documentId]).length != 0) {
             revert("Document already in set");
@@ -452,13 +446,7 @@ contract DocumentRegistry is Ownable {
 
         DocumentSet storage set = documentSets[setId];
         require(set.registeredAt != 0, "Document set not found");
-        require(
-            keccak256(bytes(set.ownerEntityType)) ==
-                keccak256(bytes(ownerEntityType)) &&
-                keccak256(bytes(set.ownerEntityId)) ==
-                keccak256(bytes(ownerEntityId)),
-            "Set owner mismatch"
-        );
+
 
         if (!_documentInSet(set.documentIds, documentId)) {
             set.documentIds.push(documentId);

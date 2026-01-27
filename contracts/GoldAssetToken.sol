@@ -28,13 +28,6 @@ contract GoldAssetToken is ERC1155, Ownable {
         STOLEN
     }
 
-    enum GoldProductType {
-        BAR,
-        COIN,
-        DUST,
-        OTHER
-    }
-
     // Structs
     struct GoldAsset {
         string tokenId;
@@ -43,7 +36,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         uint256 weightGrams;
         uint256 fineness;
         uint256 fineWeightGrams;
-        GoldProductType productType;
+        string productType;
         bytes32 certificateHash;
         string traceabilityGIC;
         AssetStatus status;
@@ -187,7 +180,7 @@ contract GoldAssetToken is ERC1155, Ownable {
      * @param refinerName Refiner/manufacturer name.
      * @param weightGrams Gross weight in grams (scaled by 10^4).
      * @param fineness Gold purity (9999 = 99.99%).
-     * @param productType BAR, COIN, DUST, OTHER.
+     * @param productType Product type string, e.g. "BAR", "COIN".
      * @param certificateHash SHA-256 hash of authenticity certificate.
      * @param traceabilityGIC GIC of introducing member.
      * @param certified LBMA certification flag.
@@ -200,7 +193,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         string memory refinerName,
         uint256 weightGrams,
         uint256 fineness,
-        GoldProductType productType,
+        string memory productType,
         bytes32 certificateHash,
         string memory traceabilityGIC,
         bool certified,
