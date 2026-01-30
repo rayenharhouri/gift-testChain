@@ -57,8 +57,6 @@ help_screen() {
   echo "  ${GRN}<number>${RST}           run event by menu index"
   echo "  ${GRN}<EventName>${RST}        run event by name (case-insensitive)"
   echo "  ${GRN}rpc <url>${RST}          set RPC_URL"
-  echo "  ${GRN}addr <KEY> <0x..>${RST}  set address (keys: MEMBER_REGISTRY, DOCUMENT_REGISTRY, GOLD_ASSET_TOKEN, GOLD_ACCOUNT_LEDGER, TX_ORDER_BOOK, VAULT_REGISTRY)"
-  echo "  ${GRN}range <from> <to>${RST}  set FROM_BLOCK / TO_BLOCK (to can be 'latest')"
   echo "  ${GRN}show${RST}               show current config"
   echo "  ${GRN}clear${RST}              clear screen"
   echo "  ${GRN}help${RST}               show this help"
@@ -86,7 +84,7 @@ declare -A EVT_ADDR EVT_SIG EVT_DECODE
 # GoldAssetToken
 EVT_ADDR[AssetMinted]="$ADDR_GOLD_ASSET_TOKEN"
 EVT_SIG[AssetMinted]="AssetMinted(uint256,string,string,uint256,uint256,address,uint256)"
-EVT_DECODE[AssetMinted]="uint256,string,string,uint256,uint256,address,uint256"
+EVT_DECODE[AssetMinted]="string,string,uint256,uint256,uint256"
 
 EVT_ADDR[AssetBurned]="$ADDR_GOLD_ASSET_TOKEN"
 EVT_SIG[AssetBurned]="AssetBurned(uint256,string,address,address,uint256)"
@@ -388,20 +386,7 @@ while true; do
       set_rpc "$rest"
       continue
       ;;
-    range)
-      f="$(awk '{print $1}' <<<"$rest")"
-      t="$(awk '{print $2}' <<<"$rest")"
-      [[ -z "$f" || -z "$t" ]] && { echo "range <from> <to>"; continue; }
-      set_range "$f" "$t"
-      continue
-      ;;
-    addr)
-      k="$(awk '{print $1}' <<<"$rest")"
-      v="$(awk '{print $2}' <<<"$rest")"
-      [[ -z "$k" || -z "$v" ]] && { echo "addr <KEY> <0x..>"; continue; }
-      set_addr "$k" "$v"
-      continue
-      ;;
+    
   esac
 
   # number selection
