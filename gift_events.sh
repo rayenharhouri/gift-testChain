@@ -50,31 +50,7 @@ EOF
   echo "${CYA}${BOLD}RPC${RST}: ${RPC_URL}"
   echo "${CYA}${BOLD}Blocks${RST}: FROM_BLOCK=${FROM_BLOCK}  TO_BLOCK=${TO_BLOCK}"
   hr
-}
-
-help_screen() {
-  echo "${BOLD}Commands:${RST}"
-  echo "  ${GRN}<number>${RST}           run event by menu index"
-  echo "  ${GRN}<EventName>${RST}        run event by name (case-insensitive)"
-  echo "  ${GRN}rpc <url>${RST}          set RPC_URL"
-  echo "  ${GRN}show${RST}               show current config"
-  echo "  ${GRN}clear${RST}              clear screen"
-  echo "  ${GRN}help${RST}               show this help"
-  echo "  ${GRN}q${RST} / ${GRN}quit${RST}          exit"
-  hr
-}
-
-show_config() {
-  echo "${BOLD}Config:${RST}"
-  echo "  RPC_URL=$RPC_URL"
-  echo "  FROM_BLOCK=$FROM_BLOCK"
-  echo "  TO_BLOCK=$TO_BLOCK"
-  echo "  ADDR_MEMBER_REGISTRY=$ADDR_MEMBER_REGISTRY"
-  echo "  ADDR_DOCUMENT_REGISTRY=$ADDR_DOCUMENT_REGISTRY"
-  echo "  ADDR_GOLD_ASSET_TOKEN=$ADDR_GOLD_ASSET_TOKEN"
-  echo "  ADDR_GOLD_ACCOUNT_LEDGER=$ADDR_GOLD_ACCOUNT_LEDGER"
-  echo "  ADDR_TX_ORDER_BOOK=$ADDR_TX_ORDER_BOOK"
-  echo "  ADDR_VAULT_REGISTRY=$ADDR_VAULT_REGISTRY"
+  echo "${DIM}Type a number to run an event. Type 'q' to quit.${RST}"
   hr
 }
 
@@ -84,6 +60,7 @@ declare -A EVT_ADDR EVT_SIG EVT_DECODE
 # GoldAssetToken
 EVT_ADDR[AssetMinted]="$ADDR_GOLD_ASSET_TOKEN"
 EVT_SIG[AssetMinted]="AssetMinted(uint256,string,string,uint256,uint256,address,uint256)"
+# tokenId + owner are indexed => decode only non-indexed
 EVT_DECODE[AssetMinted]="string,string,uint256,uint256,uint256"
 
 EVT_ADDR[AssetBurned]="$ADDR_GOLD_ASSET_TOKEN"
@@ -226,7 +203,7 @@ EVENTS=(
 
 print_menu() {
   local i=1
-  echo "${BOLD}${YEL}Select an event:${RST}  ${DIM}(type number or name, 'help' for commands)${RST}"
+  echo "${BOLD}${YEL}Select an event:${RST}"
   hr
   for e in "${EVENTS[@]}"; do
     printf " ${CYA}%2d${RST}) ${BOLD}%-20s${RST} ${DIM}%s${RST}\n" "$i" "$e" "${EVT_ADDR[$e]}"
@@ -295,120 +272,28 @@ run_event() {
   decode_rows "$evt" "$logs"
 }
 
-set_rpc() {
-  local url="$1"
-  export RPC_URL="$url"
-  banner
-}
-
-set_range() {
-  local f="$1" t="$2"
-  export FROM_BLOCK="$f"
-  export TO_BLOCK="$t"
-  banner
-}
-
-set_addr() {
-  local key="$1" val="$2"
-  case "${key^^}" in
-    MEMBER_REGISTRY) export ADDR_MEMBER_REGISTRY="$val" ;;
-    DOCUMENT_REGISTRY) export ADDR_DOCUMENT_REGISTRY="$val" ;;
-    GOLD_ASSET_TOKEN) export ADDR_GOLD_ASSET_TOKEN="$val" ;;
-    GOLD_ACCOUNT_LEDGER) export ADDR_GOLD_ACCOUNT_LEDGER="$val" ;;
-    TX_ORDER_BOOK) export ADDR_TX_ORDER_BOOK="$val" ;;
-    VAULT_REGISTRY) export ADDR_VAULT_REGISTRY="$val" ;;
-    *) echo "invalid key"; return 0 ;;
-  esac
-
-  # refresh registry pointers (so future lookups reflect new addrs)
-  EVT_ADDR[AssetMinted]="$ADDR_GOLD_ASSET_TOKEN"
-  EVT_ADDR[AssetBurned]="$ADDR_GOLD_ASSET_TOKEN"
-  EVT_ADDR[AssetStatusChanged]="$ADDR_GOLD_ASSET_TOKEN"
-  EVT_ADDR[CustodyChanged]="$ADDR_GOLD_ASSET_TOKEN"
-  EVT_ADDR[AssetTransferred]="$ADDR_GOLD_ASSET_TOKEN"
-  EVT_ADDR[WarrantLinked]="$ADDR_GOLD_ASSET_TOKEN"
-  EVT_ADDR[OwnershipUpdated]="$ADDR_GOLD_ASSET_TOKEN"
-
-  EVT_ADDR[OrderCreated]="$ADDR_TX_ORDER_BOOK"
-  EVT_ADDR[OrderPrepared]="$ADDR_TX_ORDER_BOOK"
-  EVT_ADDR[OrderSigned]="$ADDR_TX_ORDER_BOOK"
-  EVT_ADDR[OrderExecuted]="$ADDR_TX_ORDER_BOOK"
-  EVT_ADDR[OrderCancelled]="$ADDR_TX_ORDER_BOOK"
-  EVT_ADDR[OrderFailed]="$ADDR_TX_ORDER_BOOK"
-  EVT_ADDR[OrderExpired]="$ADDR_TX_ORDER_BOOK"
-
-  EVT_ADDR[DocumentRegistered]="$ADDR_DOCUMENT_REGISTRY"
-  EVT_ADDR[DocumentSetRegistered]="$ADDR_DOCUMENT_REGISTRY"
-  EVT_ADDR[DocumentVerified]="$ADDR_DOCUMENT_REGISTRY"
-  EVT_ADDR[DocumentSuperseded]="$ADDR_DOCUMENT_REGISTRY"
-  EVT_ADDR[DocumentRevoked]="$ADDR_DOCUMENT_REGISTRY"
-
-  EVT_ADDR[AccountCreated]="$ADDR_GOLD_ACCOUNT_LEDGER"
-  EVT_ADDR[BalanceUpdated]="$ADDR_GOLD_ACCOUNT_LEDGER"
-  EVT_ADDR[BalanceUpdaterSet]="$ADDR_GOLD_ACCOUNT_LEDGER"
-
-  EVT_ADDR[BlacklistUpdated]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[MemberRegistered]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[MemberApproved]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[MemberSuspended]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[UserRegistered]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[UserLinkedToMember]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[RoleAssigned]="$ADDR_MEMBER_REGISTRY"
-  EVT_ADDR[RoleRevoked]="$ADDR_MEMBER_REGISTRY"
-
-  EVT_ADDR[VaultCreated]="$ADDR_VAULT_REGISTRY"
-  EVT_ADDR[VaultStatusUpdated]="$ADDR_VAULT_REGISTRY"
-
-  banner
-}
-
 # ====== MAIN LOOP ======
 banner
-help_screen
 
 while true; do
   print_menu
   printf "${BOLD}${GRN}gift>${RST} "
   IFS= read -r line || exit 0
-  [[ -z "${line// }" ]] && continue
+  line="${line//[[:space:]]/}"
+  [[ -z "$line" ]] && continue
 
-  cmd="${line%% *}"
-  rest="${line#"$cmd"}"
-  rest="${rest# }"
-
-  case "${cmd,,}" in
+  case "${line,,}" in
     q|quit|exit) exit 0 ;;
-    clear) banner; continue ;;
-    help|\?) help_screen; continue ;;
-    show) show_config; continue ;;
-    rpc)
-      [[ -z "$rest" ]] && { echo "rpc <url>"; continue; }
-      set_rpc "$rest"
-      continue
-      ;;
-    
   esac
 
-  # number selection
-  if [[ "$cmd" =~ ^[0-9]+$ ]]; then
-    n="$cmd"
+  if [[ "$line" =~ ^[0-9]+$ ]]; then
+    n="$line"
     if (( n >= 1 && n <= ${#EVENTS[@]} )); then
       run_event "${EVENTS[$((n-1))]}"
     else
-      echo "invalid"
+      echo "${RED}invalid${RST}"
     fi
-    continue
-  fi
-
-  # name selection
-  found=""
-  for e in "${EVENTS[@]}"; do
-    if [[ "${e,,}" == "${cmd,,}" ]]; then found="$e"; break; fi
-  done
-
-  if [[ -n "$found" ]]; then
-    run_event "$found"
   else
-    echo "invalid"
+    echo "${RED}invalid (numbers only)${RST}"
   fi
 done
