@@ -141,7 +141,7 @@ contract VaultSiteRegistryTest is Test {
 
     function test_CreateVaultSite_Unauthorized_Reverts() public {
         vm.prank(outsider);
-        vm.expectRevert("Not authorized: PLATFORM role required");
+        vm.expectRevert("Not authorized: VAULT or GMO role required");
         vaultSiteRegistry.createVaultSite(
             "VSNOAUTH",
             "Nope",

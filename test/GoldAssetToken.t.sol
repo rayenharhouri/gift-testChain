@@ -6,6 +6,7 @@ import "../contracts/GoldAssetToken.sol";
 
 contract MockMemberRegistry {
     mapping(address => uint256) public roles;
+    mapping(address => bool) public blacklisted;
 
     function setRole(address member, uint256 role) external {
         roles[member] = role;
@@ -23,6 +24,14 @@ contract MockMemberRegistry {
     ) external pure returns (uint8) {
         // Always ACTIVE for tests
         return 1;
+    }
+
+    function setBlacklisted(address account, bool status) external {
+        blacklisted[account] = status;
+    }
+
+    function isBlacklisted(address account) external view returns (bool) {
+        return blacklisted[account];
     }
 }
 
@@ -132,9 +141,9 @@ contract GoldAssetTokenTest is Test {
         assertEq(ledgerTokenId, tokenId);
     }
 
-    function test_DuplicatePreventionFails() public {
+    function test_DuplicateSerialAllowed() public {
         vm.prank(refiner);
-        goldToken.mint(
+        uint256 t1 = goldToken.mint(
             owner,
             "IGAN-1000",
             "SN123456",
@@ -149,8 +158,7 @@ contract GoldAssetTokenTest is Test {
         );
 
         vm.prank(refiner);
-        vm.expectRevert("Asset already registered");
-        goldToken.mint(
+        uint256 t2 = goldToken.mint(
             owner,
             "IGAN-1001",
             "SN123456", // same serialNumber + refinerName => duplicate
@@ -163,11 +171,13 @@ contract GoldAssetTokenTest is Test {
             true,
             "WARRANT-002"
         );
+        assertEq(t1, 1);
+        assertEq(t2, 2);
     }
 
-    function test_OnlyRefinerCanMint() public {
+    function test_OnlyRefinerOrMinterCanMint() public {
         vm.prank(owner);
-        vm.expectRevert("Not authorized: REFINER role required");
+        vm.expectRevert("Not authorized: REFINER or MINTER role required");
         goldToken.mint(
             owner,
             "IGAN-1000",
@@ -236,7 +246,7 @@ contract GoldAssetTokenTest is Test {
         // one ledger call from mint
         assertEq(accountLedger.callsLength(), 1);
 
-        vm.prank(owner);
+        vm.prank(refiner);
         // accountId argument is ignored in implementation; IGAN comes from stored asset
         goldToken.burn(tokenId, "SOME-OTHER-IGAN", "Delivered to customer");
 
@@ -423,30 +433,6 @@ contract GoldAssetTokenTest is Test {
         assertEq(goldToken.assetOwner(tokenId), newOwner);
     }
 
-    function test_WhitelistManagement() public {
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-
-        assertTrue(goldToken.whitelist(owner));
-
-        vm.prank(admin);
-        goldToken.removeFromWhitelist(owner);
-
-        assertFalse(goldToken.whitelist(owner));
-    }
-
-    function test_BlacklistManagement() public {
-        vm.prank(admin);
-        goldToken.addToBlacklist(owner);
-
-        assertTrue(goldToken.blacklist(owner));
-
-        vm.prank(admin);
-        goldToken.removeFromBlacklist(owner);
-
-        assertFalse(goldToken.blacklist(owner));
-    }
-
     function _mintOne() internal returns (uint256 tokenId) {
         vm.prank(refiner);
         tokenId = goldToken.mint(
@@ -468,12 +454,6 @@ contract GoldAssetTokenTest is Test {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
 
-        // whitelist both sides (required by _update)
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-        vm.prank(admin);
-        goldToken.addToWhitelist(to);
-
         uint256 t = 12345;
         vm.warp(t);
 
@@ -492,44 +472,12 @@ contract GoldAssetTokenTest is Test {
         assertEq(goldToken.balanceOf(to, tokenId), 1);
     }
 
-    function test_Transfer_Reverts_WhenRecipientNotWhitelisted() public {
-        uint256 tokenId = _mintOne();
-        address to = address(0xBEEF);
-
-        // only whitelist sender
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-
-        vm.prank(owner);
-        vm.expectRevert("Transfer not whitelisted");
-        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
-    }
-
-    function test_Transfer_Reverts_WhenSenderNotWhitelisted() public {
-        uint256 tokenId = _mintOne();
-        address to = address(0xBEEF);
-
-        // only whitelist recipient
-        vm.prank(admin);
-        goldToken.addToWhitelist(to);
-
-        vm.prank(owner);
-        vm.expectRevert("Transfer not whitelisted");
-        goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
-    }
-
     function test_Transfer_Reverts_WhenEitherSideBlacklisted() public {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
 
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-        vm.prank(admin);
-        goldToken.addToWhitelist(to);
-
         // blacklist recipient
-        vm.prank(admin);
-        goldToken.addToBlacklist(to);
+        memberRegistry.setBlacklisted(to, true);
 
         vm.prank(owner);
         vm.expectRevert("Address blacklisted");
@@ -539,11 +487,6 @@ contract GoldAssetTokenTest is Test {
     function test_Transfer_Reverts_WhenAssetLocked_Pledged() public {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
-
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-        vm.prank(admin);
-        goldToken.addToWhitelist(to);
 
         // lock it
         vm.prank(owner);
@@ -562,11 +505,6 @@ contract GoldAssetTokenTest is Test {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
 
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-        vm.prank(admin);
-        goldToken.addToWhitelist(to);
-
         // lock it
         vm.prank(owner);
         goldToken.updateStatus(
@@ -584,17 +522,12 @@ contract GoldAssetTokenTest is Test {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
 
-        vm.prank(admin);
-        goldToken.addToWhitelist(owner);
-        vm.prank(admin);
-        goldToken.addToWhitelist(to);
-
         vm.prank(owner);
         goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
 
         // old owner tries to update status -> should fail because assetOwner changed
         vm.prank(owner);
-        vm.expectRevert("Not authorized: Owner or CUSTODIAN role required");
+        vm.expectRevert("Not authorized: asset operator role required");
         goldToken.updateStatus(
             tokenId,
             GoldAssetToken.AssetStatus.IN_VAULT,
@@ -603,7 +536,7 @@ contract GoldAssetTokenTest is Test {
 
         // old owner tries to burn -> should fail
         vm.prank(owner);
-        vm.expectRevert("Not authorized: Owner or CUSTODIAN role required");
+        vm.expectRevert("Not authorized: REFINER or MINTER role required");
         goldToken.burn(tokenId, "IGAN-1000", "No longer owner");
     }
 
@@ -611,7 +544,6 @@ contract GoldAssetTokenTest is Test {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
 
-        // NOTE: no whitelisting at all
         vm.prank(admin);
         goldToken.forceTransfer(tokenId, owner, to, "Compliance action");
 
@@ -647,9 +579,8 @@ contract GoldAssetTokenTest is Test {
     }
 
     function test_Burn_NonExistentToken_Reverts() public {
-        // custodian can pass onlyOwnerOrCustodian even if token doesn't exist,
-        // but the function will revert on missing asset.
-        vm.prank(custodian);
+        // refiner can call burn, but the function will revert on missing asset.
+        vm.prank(refiner);
         vm.expectRevert("Asset does not exist");
         goldToken.burn(999, "IGAN-1000", "Burn non-existent");
     }

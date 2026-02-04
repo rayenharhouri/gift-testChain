@@ -47,8 +47,7 @@ contract TransactionOrderBook is Ownable {
         PENDING_COUNTERPARTY,
         EXECUTED,
         CANCELLED,
-        FAILED,
-        EXPIRED
+        FAILED
     }
 
     // -------------------------------------------------------------------------
@@ -148,7 +147,6 @@ contract TransactionOrderBook is Ownable {
         uint256 timestamp
     );
 
-    event OrderExpired(string indexed transactionRef, uint256 timestamp);
 
     // -------------------------------------------------------------------------
     // Modifiers
@@ -265,11 +263,6 @@ contract TransactionOrderBook is Ownable {
         require(_callerIsParticipant(order), "Not authorized");
         require(_isGmo(msg.sender), "Not authorized: GMO required");
 
-        if (_isExpired(order)) {
-            _expireOrder(order);
-            return;
-        }
-
         require(
             order.status == TransactionStatus.PENDING_PREPARATION,//PENDING_PREPARATION
             "Invalid status"
@@ -303,11 +296,6 @@ contract TransactionOrderBook is Ownable {
         TransactionOrder storage order = orders[txRef];
         require(order.createdAt != 0, "Order not found");
         require(_callerIsParticipant(order), "Not authorized");
-
-        if (_isExpired(order)) {
-            _expireOrder(order);
-            return;
-        }
 
         require(
             order.status == TransactionStatus.PENDING_EXECUTION,
@@ -392,10 +380,6 @@ contract TransactionOrderBook is Ownable {
             _callerIsParticipant(order) || _isGmo(msg.sender),
             "Not authorized"
         );
-        if (_isExpired(order)) {
-            _expireOrder(order);
-            return;
-        }
         _validateTransition(order.status, newStatus);
 
         if (
@@ -419,10 +403,6 @@ contract TransactionOrderBook is Ownable {
             emit OrderFailed(txRef, reason, block.timestamp);
             return;
         }
-        if (newStatus == TransactionStatus.EXPIRED) {
-            emit OrderExpired(txRef, block.timestamp);
-            return;
-        }
     }
 
     function _validateTransition(
@@ -441,16 +421,11 @@ contract TransactionOrderBook is Ownable {
         if (currentStatus == TransactionStatus.FAILED) {
             revert("Already failed");
         }
-        if (currentStatus == TransactionStatus.EXPIRED) {
-            revert("Already expired");
-        }
-
         if (currentStatus == TransactionStatus.PENDING_PREPARATION) {
             require(
                 newStatus == TransactionStatus.PENDING_SIGNATURE ||
                     newStatus == TransactionStatus.CANCELLED ||
-                    newStatus == TransactionStatus.FAILED ||
-                    newStatus == TransactionStatus.EXPIRED,
+                    newStatus == TransactionStatus.FAILED,
                 "Invalid status change"
             );
             return;
@@ -460,8 +435,7 @@ contract TransactionOrderBook is Ownable {
             require(
                 newStatus == TransactionStatus.PENDING_COUNTERPARTY ||
                     newStatus == TransactionStatus.CANCELLED ||
-                    newStatus == TransactionStatus.FAILED ||
-                    newStatus == TransactionStatus.EXPIRED,
+                    newStatus == TransactionStatus.FAILED,
                 "Invalid status change"
             );
             return;
@@ -471,8 +445,7 @@ contract TransactionOrderBook is Ownable {
             require(
                 newStatus == TransactionStatus.PENDING_EXECUTION ||
                     newStatus == TransactionStatus.CANCELLED ||
-                    newStatus == TransactionStatus.FAILED ||
-                    newStatus == TransactionStatus.EXPIRED,
+                    newStatus == TransactionStatus.FAILED,
                 "Invalid status change"
             );
             return;
@@ -482,8 +455,7 @@ contract TransactionOrderBook is Ownable {
             require(
                 newStatus == TransactionStatus.EXECUTED ||
                     newStatus == TransactionStatus.CANCELLED ||
-                    newStatus == TransactionStatus.FAILED ||
-                    newStatus == TransactionStatus.EXPIRED,
+                    newStatus == TransactionStatus.FAILED,
                 "Invalid status change"
             );
             return;
@@ -589,11 +561,6 @@ contract TransactionOrderBook is Ownable {
         TransactionOrder storage order = orders[txRef];
         require(order.createdAt != 0, "Order not found");
         require(_callerIsParticipant(order), "Not authorized");
-
-        if (_isExpired(order)) {
-            _expireOrder(order);
-            return;
-        }
 
         require(signature.length > 0, "Invalid signature");
 
@@ -721,28 +688,6 @@ contract TransactionOrderBook is Ownable {
                 tokenId
             );
         }
-    }
-
-    function _isExpired(
-        TransactionOrder storage order
-    ) internal view returns (bool) {
-        if (order.expiresAt == 0) {
-            return false;
-        }
-        return block.timestamp > order.expiresAt;
-    }
-
-    function _expireOrder(TransactionOrder storage order) internal {
-        if (
-            order.status == TransactionStatus.EXPIRED ||
-            order.status == TransactionStatus.EXECUTED ||
-            order.status == TransactionStatus.CANCELLED ||
-            order.status == TransactionStatus.FAILED
-        ) {
-            return;
-        }
-        order.status = TransactionStatus.EXPIRED;
-        emit OrderExpired(order.transactionRef, block.timestamp);
     }
 
     function _callerIsParticipant(

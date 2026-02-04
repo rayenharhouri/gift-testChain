@@ -127,7 +127,7 @@ contract GoldAccountLedgerTest is Test {
 
     function testUnauthorizedCannotCreateAccount() public {
         vm.prank(user1);
-        vm.expectRevert("Not authorized: PLATFORM role required");
+        vm.expectRevert("Not authorized: account creator role required");
         ledger.createAccount(
             "IGAN-3000",
             "MEMBER-001",
@@ -192,7 +192,7 @@ contract GoldAccountLedgerTest is Test {
         );
 
         vm.prank(user1);
-        vm.expectRevert("Not authorized");
+        vm.expectRevert("Not authorized: GMO or VAULT role required");
         ledger.updateBalance(igan, 1, "nope", 1);
     }
 
@@ -229,7 +229,7 @@ contract GoldAccountLedgerTest is Test {
 
     function testSetBalanceUpdater_OnlyPlatform() public {
         vm.prank(user1);
-        vm.expectRevert("Not authorized: PLATFORM role required");
+        vm.expectRevert("Not authorized: GMO role required");
         ledger.setBalanceUpdater(updater, true);
 
         vm.prank(platform);

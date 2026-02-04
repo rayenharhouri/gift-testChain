@@ -45,7 +45,7 @@ contract MemberRegistryTest is Test {
         assertEq(member.roles, ROLE_REFINER);
     }
 
-    function test_AssignRole() public {
+    function test_SetRole_Grant() public {
         vm.prank(admin);
         registry.registerMember(
             "GIFTCHZZ",
@@ -56,7 +56,7 @@ contract MemberRegistryTest is Test {
         );
 
         vm.prank(governance);
-        bool success = registry.assignRole("GIFTCHZZ", ROLE_REFINER);
+        bool success = registry.setRole("GIFTCHZZ", ROLE_REFINER, true);
 
         assertTrue(success);
         
@@ -78,7 +78,7 @@ contract MemberRegistryTest is Test {
         assertTrue(hasRole);
     }
 
-    function test_RevokeRole() public {
+    function test_SetRole_Revoke() public {
         vm.prank(admin);
         registry.registerMember(
             "GIFTCHZZ",
@@ -89,7 +89,7 @@ contract MemberRegistryTest is Test {
         );
 
         vm.prank(governance);
-        bool success = registry.revokeRole("GIFTCHZZ", ROLE_REFINER);
+        bool success = registry.setRole("GIFTCHZZ", ROLE_REFINER, false);
 
         assertTrue(success);
         
@@ -220,7 +220,7 @@ contract MemberRegistryTest is Test {
         assertTrue(valid);
     }
 
-    function test_OnlyGovernanceCanAssignRole() public {
+    function test_OnlyGmoCanSetRole() public {
         vm.prank(admin);
         registry.registerMember(
             "GIFTCHZZ",
@@ -231,8 +231,8 @@ contract MemberRegistryTest is Test {
         );
 
         vm.prank(trader);
-        vm.expectRevert("Not authorized: GOVERNANCE role required");
-        registry.assignRole("GIFTCHZZ", ROLE_REFINER);
+        vm.expectRevert("Not authorized: GMO role required");
+        registry.setRole("GIFTCHZZ", ROLE_REFINER, true);
     }
 
     function test_GetMembersCount() public {
