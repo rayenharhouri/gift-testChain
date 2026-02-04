@@ -31,11 +31,11 @@ Functions exercised: `createAccount`, `getAccountBalance`, `updateBalance`, `set
 
 **GoldAssetToken**  
 Test file: `test/GoldAssetToken.t.sol`  
-Functions exercised: `mint`, `getAssetDetails`, `updateStatus`, `burn`, `isAssetLocked`, `verifyCertificate`, `getAssetsByOwner`, `forceTransfer`, `safeTransferFrom`, `assetOwner`, `balanceOf`
+Functions exercised: `mint`, `getAssetDetails`, `updateStatus`, `updateCustodyBatch`, `burn`, `isAssetLocked`, `verifyCertificate`, `getAssetsByOwner`, `forceTransfer`, `safeTransferFrom`, `assetOwner`, `balanceOf`
 
 **TransactionOrderBook**  
 Test file: `test/TransactionOrderBook.t.sol`  
-Functions exercised: `createOrder`, `signOrder`, `getOrderStatus`
+Functions exercised: `createOrder`, `prepareOrder`, `signOrder`, `getOrderStatus`
 
 **VaultSiteRegistry**  
 Test file: `test/VaultSiteRegistry.t.sol`  
@@ -43,7 +43,7 @@ Functions exercised: `createVaultSite`, `vaultSiteExistsView`, `getVaultSite`, `
 
 **Cross‑contract Integration**  
 Test file: `test/IntegrationFlow.t.sol`  
-Functions exercised: `setGoldAccountLedger`, `setGoldAssetToken`, `setExecutionOptions`, `setBalanceUpdater`, `createAccount`, `mint`, `setApprovalForAll`, `createOrder`, `signOrder`, `executeOrder`, `assetOwner`, `getAccountBalance`
+Functions exercised: `setGoldAccountLedger`, `setGoldAssetToken`, `setExecutionOptions`, `setBalanceUpdater`, `createAccount`, `mint`, `setApprovalForAll`, `prepareOrder`, `signOrder`, `executeOrder`, `assetOwner`, `getAccountBalance`, `updateCustodyBatch`, `getAssetStatus`
 
 ## Test Inventory (Detailed)
 
@@ -106,10 +106,11 @@ Functions exercised: `setGoldAccountLedger`, `setGoldAssetToken`, `setExecutionO
 18. `test_ForceTransfer_Reverts_WhenAssetLocked_WithCurrentUpdateLogic` - lock blocks.
 19. `test_VerifyCertificate_NonExistentToken_Reverts` - invalid token rejected.
 20. `test_Burn_NonExistentToken_Reverts` - invalid token rejected.
+21. `test_UpdateCustodyBatch_SetsInTransit` - batch custody updates set status to in transit.
 
 ### `test/TransactionOrderBook.t.sol`
-1. `test_CreateSignExecuteFlow` - create order, initiator signs, counterparty signs.
-2. `test_CounterpartyCannotSignFirst` - sequence enforcement.
+1. `test_PrepareSignFlow` - register (prepare) order then counterparty signs.
+2. `test_CounterpartyCannotSignBeforePrepare` - cannot sign before prepare.
 
 ### `test/VaultSiteRegistry.t.sol`
 1. `test_CreateVaultSite_AsPlatform_Succeeds` - platform creation and stored fields.
@@ -133,19 +134,19 @@ Functions exercised: `setGoldAccountLedger`, `setGoldAssetToken`, `setExecutionO
 19. `test_GetVaultSiteIds_Multiple` - list ordering and count.
 
 ### `test/IntegrationFlow.t.sol`
-1. `test_EndToEnd_Flow` - full lifecycle: member setup, account creation, mint, order, sign, execute, and verify ownership + ledger balances.
+1. `test_EndToEnd_Flow` - full lifecycle: member setup, account creation, mint, prepare, custody in transit, sign, execute, and verify ownership + ledger balances.
 
 ## Integration Flow Summary
 1. GMO members created and roles set.
 2. Sender/receiver IGAN accounts created.
 3. Asset minted to sender.
-4. Order created with tokenIds.
-5. Sign sequence enforced: initiator then counterparty.
-6. Execute order and confirm asset transfer and ledger updates.
+4. Order registered via `prepareOrder` with tokenIds + seller signature.
+5. LSP sets custody batch to `IN_TRANSIT`.
+6. Counterparty signs, then execute order and confirm asset transfer + ledger updates.
 
 ## Common Failure Causes
 1. Missing role setup (GMO/REFINER/MINTER/TRADER).
-2. Counterparty tries to sign before initiator.
+2. Counterparty tries to sign before prepare.
 3. Balance updater not allowlisted.
 4. Empty or invalid IDs (GIC, IGAN, tokenIds).
 

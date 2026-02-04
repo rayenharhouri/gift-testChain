@@ -518,6 +518,23 @@ contract GoldAssetTokenTest is Test {
         goldToken.safeTransferFrom(owner, to, tokenId, 1, "");
     }
 
+    function test_UpdateCustodyBatch_SetsInTransit() public {
+        uint256 tokenId = _mintOne();
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = tokenId;
+
+        vm.prank(custodian);
+        goldToken.updateCustodyBatch(ids, address(0xBEEF), "direct");
+
+        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
+            tokenId
+        );
+        assertEq(
+            uint8(asset.status),
+            uint8(GoldAssetToken.AssetStatus.IN_TRANSIT)
+        );
+    }
+
     function test_OldOwnerCannotBurnOrUpdateStatusAfterTransfer() public {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);

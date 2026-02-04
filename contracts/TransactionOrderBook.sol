@@ -17,6 +17,9 @@ contract TransactionOrderBook is Ownable {
     uint256 public constant ROLE_GMO = (1 << 6) | (1 << 7);
     uint256 public constant ROLE_ORDER_CREATOR =
         ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_GMO;
+    uint8 private constant ASSET_STATUS_IN_VAULT = 1;
+    uint8 private constant ASSET_STATUS_IN_TRANSIT = 2;
+    uint8 private constant ASSET_STATUS_PLEDGED = 3;
 
     IMemberRegistryExtended public memberRegistry;
     IGoldAccountLedger public accountLedger;
@@ -42,9 +45,8 @@ contract TransactionOrderBook is Ownable {
 
     enum TransactionStatus {
         PENDING_PREPARATION,
-        PENDING_SIGNATURE,
-        PENDING_EXECUTION,
         PENDING_COUNTERPARTY,
+        PENDING_EXECUTION,
         EXECUTED,
         CANCELLED,
         FAILED
@@ -231,9 +233,9 @@ contract TransactionOrderBook is Ownable {
                     keccak256(bytes(initiatorGIC))),
             "Not initiator"
         );
+        require(tokenIds.length == 0, "tokenIds not allowed");
         require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");
         require(bytes(receiverIGAN).length > 0, "Invalid receiverIGAN");
-        require(tokenIds.length > 0, "Missing tokenIds");
         _validateAccounts(senderIGAN, receiverIGAN);
         txRef = _createOrder(
             transactionRef,
@@ -253,34 +255,79 @@ contract TransactionOrderBook is Ownable {
     }
 
     function prepareOrder(
-        string memory txRef,
+        string memory transactionRef,
+        string memory transactionId,
+        TransactionType txType,
+        string memory initiatorGIC,
+        string memory counterpartyGIC,
         string memory senderIGAN,
         string memory receiverIGAN,
-        uint256[] memory tokenIds
-    ) external callerNotBlacklisted {
-        TransactionOrder storage order = orders[txRef];
-        require(order.createdAt != 0, "Order not found");
-        require(_callerIsParticipant(order), "Not authorized");
+        uint256[] memory tokenIds,
+        RequestedAsset[] memory requestedAssets,
+        string memory valuationDate,
+        string memory valuationCurrency,
+        uint256 transactionValue,
+        uint256 expiresAt,
+        bytes memory signature
+    ) external callerNotBlacklisted onlyOrderCreator returns (string memory txRef) {
         require(_isGmo(msg.sender), "Not authorized: GMO required");
+        require(tokenIds.length > 0, "Missing tokenIds");
+        require(signature.length > 0, "Invalid signature");
 
+        string memory creatorGIC = memberRegistry.addressToMemberGIC(msg.sender);
         require(
-            order.status == TransactionStatus.PENDING_PREPARATION,//PENDING_PREPARATION
-            "Invalid status"
+            bytes(creatorGIC).length > 0 &&
+                keccak256(bytes(creatorGIC)) ==
+                keccak256(bytes(initiatorGIC)),
+            "Not initiator"
         );
 
         require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");
         require(bytes(receiverIGAN).length > 0, "Invalid receiverIGAN");
-        order.senderIGAN = senderIGAN;
-        order.receiverIGAN = receiverIGAN;
         _validateAccounts(senderIGAN, receiverIGAN);
 
-        if (tokenIds.length > 0) {
-            order.tokenIds = tokenIds;
+        TransactionOrder storage order = orders[transactionRef];
+        if (order.createdAt == 0) {
+            txRef = _createOrder(
+                transactionRef,
+                transactionId,
+                txType,
+                initiatorGIC,
+                counterpartyGIC,
+                tokenIds,
+                requestedAssets,
+                valuationDate,
+                valuationCurrency,
+                transactionValue,
+                expiresAt,
+                senderIGAN,
+                receiverIGAN
+            );
+            order = orders[txRef];
         } else {
-            require(order.tokenIds.length > 0, "Missing tokenIds");
+            require(
+                order.status == TransactionStatus.PENDING_PREPARATION,
+                "Invalid status"
+            );
+            txRef = transactionRef;
+            order.senderIGAN = senderIGAN;
+            order.receiverIGAN = receiverIGAN;
+            order.tokenIds = tokenIds;
         }
 
-        order.status = TransactionStatus.PENDING_SIGNATURE;
+        require(!hasSigned[txRef][initiator], "Already signed");
+        hasSigned[txRef][initiator] = true;
+        orderSignatures[txRef].push(
+            Signature({
+                signer: msg.sender,
+                signerUserId: memberRegistry.addressToUserId(msg.sender),
+                signerRole: initiator,
+                signature: signature,
+                signedAt: block.timestamp
+            })
+        );
+
+        order.status = TransactionStatus.PENDING_COUNTERPARTY;
         emit OrderPrepared(txRef, order.tokenIds.length, block.timestamp);
     }
 
@@ -423,16 +470,6 @@ contract TransactionOrderBook is Ownable {
         }
         if (currentStatus == TransactionStatus.PENDING_PREPARATION) {
             require(
-                newStatus == TransactionStatus.PENDING_SIGNATURE ||
-                    newStatus == TransactionStatus.CANCELLED ||
-                    newStatus == TransactionStatus.FAILED,
-                "Invalid status change"
-            );
-            return;
-        }
-
-        if (currentStatus == TransactionStatus.PENDING_SIGNATURE) {
-            require(
                 newStatus == TransactionStatus.PENDING_COUNTERPARTY ||
                     newStatus == TransactionStatus.CANCELLED ||
                     newStatus == TransactionStatus.FAILED,
@@ -519,7 +556,7 @@ contract TransactionOrderBook is Ownable {
             transactionRef: transactionRef,
             transactionId: transactionId,
             txType: txType,
-            status: TransactionStatus.PENDING_SIGNATURE,
+            status: TransactionStatus.PENDING_PREPARATION,
             initiatorGIC: initiatorGIC,
             counterpartyGIC: counterpartyGIC,
             senderIGAN: senderIGAN,
@@ -544,7 +581,7 @@ contract TransactionOrderBook is Ownable {
             requestedAssets.length,
             valuationCurrency,
             transactionValue,
-            TransactionStatus.PENDING_SIGNATURE,
+            TransactionStatus.PENDING_PREPARATION,
             block.timestamp,
             expiresAt
         );
@@ -561,54 +598,47 @@ contract TransactionOrderBook is Ownable {
         TransactionOrder storage order = orders[txRef];
         require(order.createdAt != 0, "Order not found");
         require(_callerIsParticipant(order), "Not authorized");
+        require(_isGmo(msg.sender), "Not authorized: GMO required");
 
         require(signature.length > 0, "Invalid signature");
 
-        bool isInitiator = keccak256(bytes(signerRole)) ==
-            keccak256(bytes(initiator));
         bool isCounterparty = keccak256(bytes(signerRole)) ==
             keccak256(bytes(counterparty));
-        require(isInitiator || isCounterparty, "Invalid signerRole");
-
-        if (isInitiator) {
-            require(
-                order.status == TransactionStatus.PENDING_SIGNATURE,
-                "Initiator must sign first"
-            );
-        } else {
-            require(
-                order.status == TransactionStatus.PENDING_COUNTERPARTY,
-                "Awaiting initiator signature"
-            );
-        }
+        require(isCounterparty, "Invalid signerRole");
+        require(
+            order.status == TransactionStatus.PENDING_COUNTERPARTY,
+            "Not ready"
+        );
 
         string memory memberGIC = memberRegistry.addressToMemberGIC(msg.sender);
         require(bytes(memberGIC).length > 0, "Not authorized");
+        require(
+            keccak256(bytes(memberGIC)) ==
+                keccak256(bytes(order.counterpartyGIC)),
+            "Not counterparty"
+        );
 
-        require(!hasSigned[txRef][signerRole], "Already signed");
+        require(hasSigned[txRef][initiator], "Initiator not signed");
+        require(!hasSigned[txRef][counterparty], "Already signed");
 
-        hasSigned[txRef][signerRole] = true;
+        hasSigned[txRef][counterparty] = true;
         orderSignatures[txRef].push(
             Signature({
                 signer: msg.sender,
                 signerUserId: memberRegistry.addressToUserId(msg.sender),
-                signerRole: signerRole,
+                signerRole: counterparty,
                 signature: signature,
                 signedAt: block.timestamp
             })
         );
 
-        if (isInitiator) {
-            order.status = TransactionStatus.PENDING_COUNTERPARTY;
-        } else {
-            order.status = TransactionStatus.PENDING_EXECUTION;
-        }
+        order.status = TransactionStatus.PENDING_EXECUTION;
 
         emit OrderSigned(
             txRef,
             msg.sender,
             memberRegistry.addressToUserId(msg.sender),
-            signerRole,
+            counterparty,
             orderSignatures[txRef].length,
             minSignatures,
             block.timestamp
@@ -650,7 +680,19 @@ contract TransactionOrderBook is Ownable {
 
         for (uint256 i = 0; i < order.tokenIds.length; i++) {
             uint256 tokenId = order.tokenIds[i];
-            require(!goldAssetToken.isAssetLocked(tokenId), "Asset locked");
+            uint8 status = goldAssetToken.getAssetStatus(tokenId);
+            if (status == ASSET_STATUS_IN_TRANSIT) {
+                goldAssetToken.updateStatus(
+                    tokenId,
+                    ASSET_STATUS_IN_VAULT,
+                    "DELIVERED"
+                );
+                status = ASSET_STATUS_IN_VAULT;
+            }
+            require(
+                status != ASSET_STATUS_PLEDGED,
+                "Asset locked"
+            );
             goldAssetToken.safeTransferFrom(
                 sender.ownerAddress,
                 receiver.ownerAddress,

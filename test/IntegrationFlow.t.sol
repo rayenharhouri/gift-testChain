@@ -15,8 +15,10 @@ contract IntegrationFlowTest is Test {
 
     address initiator = address(0x1);
     address counterparty = address(0x2);
+    address lsp = address(0x3);
 
     uint256 constant ROLE_MINTER = 1 << 1;
+    uint256 constant ROLE_LSP = 1 << 4;
     uint256 constant ROLE_GMO = (1 << 6) | (1 << 7);
 
     function setUp() public {
@@ -47,6 +49,20 @@ contract IntegrationFlowTest is Test {
             keccak256("counterparty"),
             counterparty,
             ROLE_GMO
+        );
+        registry.registerMember(
+            "LSP-001",
+            MemberRegistry.MemberType.COMPANY,
+            keccak256("lsp"),
+            lsp,
+            ROLE_LSP
+        );
+        registry.registerMember(
+            "ORDERBOOK",
+            MemberRegistry.MemberType.COMPANY,
+            keccak256("orderbook"),
+            address(orderBook),
+            ROLE_LSP
         );
 
         // Create IGAN accounts
@@ -93,7 +109,7 @@ contract IntegrationFlowTest is Test {
         vm.prank(initiator);
         token.setApprovalForAll(address(orderBook), true);
 
-        // Create order
+        // Register order (phase 2)
         TransactionOrderBook.RequestedAsset[] memory req =
             new TransactionOrderBook.RequestedAsset[](1);
         req[0] = TransactionOrderBook.RequestedAsset({
@@ -104,33 +120,36 @@ contract IntegrationFlowTest is Test {
         tokenIds[0] = tokenId;
 
         vm.prank(initiator);
-        string memory txRef = orderBook.createOrder(
+        string memory txRef = orderBook.prepareOrder(
             "TX-100",
             "TX-100",
             TransactionOrderBook.TransactionType.TRANSFER,
             "INITIATOR",
             "COUNTERPARTY",
+            "IGAN-1",
+            "IGAN-2",
             tokenIds,
             req,
             "2026-02-04",
             "USD",
             100,
             0,
-            "IGAN-1",
-            "IGAN-2"
+            hex"01"
         );
 
-        assertEq(
-            uint8(orderBook.getOrderStatus(txRef)),
-            uint8(TransactionOrderBook.TransactionStatus.PENDING_SIGNATURE)
-        );
-
-        // Sign by initiator then counterparty (both GMO)
-        vm.prank(initiator);
-        orderBook.signOrder(txRef, hex"01", "initiator");
         assertEq(
             uint8(orderBook.getOrderStatus(txRef)),
             uint8(TransactionOrderBook.TransactionStatus.PENDING_COUNTERPARTY)
+        );
+
+        // Phase 3: LSP updates custody and marks assets in transit
+        vm.prank(lsp);
+        uint256[] memory custodyIds = new uint256[](1);
+        custodyIds[0] = tokenId;
+        token.updateCustodyBatch(custodyIds, lsp, "direct");
+        assertEq(
+            uint8(token.getAssetStatus(tokenId)),
+            uint8(GoldAssetToken.AssetStatus.IN_TRANSIT)
         );
 
         vm.prank(counterparty);
@@ -150,6 +169,10 @@ contract IntegrationFlowTest is Test {
 
         // Asset ownership moved to counterparty
         assertEq(token.assetOwner(tokenId), counterparty);
+        assertEq(
+            uint8(token.getAssetStatus(tokenId)),
+            uint8(GoldAssetToken.AssetStatus.IN_VAULT)
+        );
 
         // Ledger balances updated
         assertEq(ledger.getAccountBalance("IGAN-1"), 0);

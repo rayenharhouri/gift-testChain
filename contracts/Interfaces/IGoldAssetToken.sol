@@ -11,4 +11,12 @@ interface IGoldAssetToken {
     ) external;
 
     function isAssetLocked(uint256 tokenId) external view returns (bool);
+
+    function getAssetStatus(uint256 tokenId) external view returns (uint8);
+
+    function updateStatus(
+        uint256 tokenId,
+        uint8 newStatus,
+        string memory reason
+    ) external;
 }

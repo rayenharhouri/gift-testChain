@@ -128,17 +128,7 @@ contract GoldAssetToken is ERC1155, Ownable {
     }
 
     modifier onlyAssetOperator(uint256 tokenId) {
-        if (assetOwner[tokenId] == msg.sender) {
-            _;
-            return;
-        }
-        require(
-            memberRegistry.isMemberInRole(
-                msg.sender,
-                ROLE_REFINER | ROLE_MINTER | ROLE_VAULT | ROLE_LSP
-            ),
-            "Not authorized: asset operator role required"
-        );
+        _requireAssetOperator(tokenId);
         _;
     }
 
@@ -354,6 +344,45 @@ contract GoldAssetToken is ERC1155, Ownable {
         );
     }
 
+    /**
+     * @dev Batch update custody and mark assets as IN_TRANSIT.
+     * @param tokenIds Token IDs.
+     * @param toParty New custodian.
+     * @param custodyType Type of custody.
+     */
+    function updateCustodyBatch(
+        uint256[] memory tokenIds,
+        address toParty,
+        string memory custodyType
+    ) external {
+        require(tokenIds.length > 0, "Missing tokenIds");
+        for (uint256 i = 0; i < tokenIds.length; i++) {
+            uint256 tokenId = tokenIds[i];
+            require(assets[tokenId].mintedAt != 0, "Asset does not exist");
+            _requireAssetOperator(tokenId);
+
+            address fromParty = assetOwner[tokenId];
+            emit CustodyChanged(
+                tokenId,
+                fromParty,
+                toParty,
+                custodyType,
+                block.timestamp
+            );
+
+            AssetStatus previousStatus = assets[tokenId].status;
+            assets[tokenId].status = AssetStatus.IN_TRANSIT;
+            emit AssetStatusChanged(
+                tokenId,
+                previousStatus,
+                AssetStatus.IN_TRANSIT,
+                "CUSTODY_IN_TRANSIT",
+                msg.sender,
+                block.timestamp
+            );
+        }
+    }
+
     // Query Functions
 
     /**
@@ -364,6 +393,14 @@ contract GoldAssetToken is ERC1155, Ownable {
     ) external view returns (GoldAsset memory) {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
         return assets[tokenId];
+    }
+
+    /**
+     * @dev Get asset status.
+     */
+    function getAssetStatus(uint256 tokenId) external view returns (AssetStatus) {
+        require(assets[tokenId].mintedAt != 0, "Asset does not exist");
+        return assets[tokenId].status;
     }
 
     /**
@@ -402,6 +439,19 @@ contract GoldAssetToken is ERC1155, Ownable {
         AssetStatus status = assets[tokenId].status;
         return
             status == AssetStatus.PLEDGED || status == AssetStatus.IN_TRANSIT;
+    }
+
+    function _requireAssetOperator(uint256 tokenId) internal view {
+        if (assetOwner[tokenId] == msg.sender) {
+            return;
+        }
+        require(
+            memberRegistry.isMemberInRole(
+                msg.sender,
+                ROLE_REFINER | ROLE_MINTER | ROLE_VAULT | ROLE_LSP
+            ),
+            "Not authorized: asset operator role required"
+        );
     }
 
     /**

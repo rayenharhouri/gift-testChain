@@ -35,8 +35,9 @@ contract TransactionOrderBookTest is Test {
         );
     }
 
-    function test_CreateSignExecuteFlow() public {
-        TransactionOrderBook.RequestedAsset[] memory req = new TransactionOrderBook.RequestedAsset[](1);
+    function test_PrepareSignFlow() public {
+        TransactionOrderBook.RequestedAsset[] memory req =
+            new TransactionOrderBook.RequestedAsset[](1);
         req[0] = TransactionOrderBook.RequestedAsset({
             goldProductTypeId: "BAR",
             quantityGrams: 1000
@@ -46,29 +47,22 @@ contract TransactionOrderBookTest is Test {
         tokenIds[0] = 1;
 
         vm.prank(initiator);
-        string memory txRef = orderBook.createOrder(
+        string memory txRef = orderBook.prepareOrder(
             "TX-001",
             "TX-001",
             TransactionOrderBook.TransactionType.TRANSFER,
             "INITIATOR",
             "COUNTERPARTY",
+            "IGAN-1",
+            "IGAN-2",
             tokenIds,
             req,
             "2026-02-04",
             "USD",
             100,
             0,
-            "IGAN-1",
-            "IGAN-2"
+            hex"01"
         );
-
-        assertEq(
-            uint8(orderBook.getOrderStatus(txRef)),
-            uint8(TransactionOrderBook.TransactionStatus.PENDING_SIGNATURE)
-        );
-
-        vm.prank(initiator);
-        orderBook.signOrder(txRef, hex"01", "initiator");
 
         assertEq(
             uint8(orderBook.getOrderStatus(txRef)),
@@ -84,15 +78,15 @@ contract TransactionOrderBookTest is Test {
         );
     }
 
-    function test_CounterpartyCannotSignFirst() public {
-        TransactionOrderBook.RequestedAsset[] memory req = new TransactionOrderBook.RequestedAsset[](1);
+    function test_CounterpartyCannotSignBeforePrepare() public {
+        TransactionOrderBook.RequestedAsset[] memory req =
+            new TransactionOrderBook.RequestedAsset[](1);
         req[0] = TransactionOrderBook.RequestedAsset({
             goldProductTypeId: "BAR",
             quantityGrams: 1000
         });
 
-        uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = 1;
+        uint256[] memory tokenIds = new uint256[](0);
 
         vm.prank(initiator);
         string memory txRef = orderBook.createOrder(
@@ -112,7 +106,7 @@ contract TransactionOrderBookTest is Test {
         );
 
         vm.prank(counterparty);
-        vm.expectRevert("Awaiting initiator signature");
+        vm.expectRevert("Not ready");
         orderBook.signOrder(txRef, hex"01", "counterparty");
     }
 }
