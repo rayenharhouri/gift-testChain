@@ -134,6 +134,7 @@ contract IntegrationFlowTest is Test {
             "USD",
             100,
             0,
+            "USR-INIT-001",
             hex"01"
         );
 

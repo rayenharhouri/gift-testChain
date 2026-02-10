@@ -268,9 +268,11 @@ contract TransactionOrderBook is Ownable {
         string memory valuationCurrency,
         uint256 transactionValue,
         uint256 expiresAt,
+        string memory signerUserId,
         bytes memory signature
     ) external callerNotBlacklisted onlyOrderCreator returns (string memory txRef) {
         require(tokenIds.length > 0, "Missing tokenIds");
+        require(bytes(signerUserId).length > 0, "Invalid signerUserId");
         require(signature.length > 0, "Invalid signature");
 
         string memory creatorGIC = memberRegistry.addressToMemberGIC(msg.sender);
@@ -319,7 +321,7 @@ contract TransactionOrderBook is Ownable {
         orderSignatures[txRef].push(
             Signature({
                 signer: msg.sender,
-                signerUserId: memberRegistry.addressToUserId(msg.sender),
+                signerUserId: signerUserId,
                 signerRole: initiator,
                 signature: signature,
                 signedAt: block.timestamp
