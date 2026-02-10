@@ -1,8 +1,10 @@
 # Tests
 
+Made by Rayen Harhouri.
+
 **Purpose**  
 Document what is tested, how to run it, and what each test verifies. This is the handoff guide for QA and reviewers.
-
+vg
 **Scope**  
 Contracts covered: `MemberRegistry`, `GoldAccountLedger`, `GoldAssetToken`, `TransactionOrderBook`, `VaultSiteRegistry`, plus a cross‑contract integration flow.
 
@@ -31,7 +33,7 @@ Functions exercised: `createAccount`, `getAccountBalance`, `updateBalance`, `set
 
 **GoldAssetToken**  
 Test file: `test/GoldAssetToken.t.sol`  
-Functions exercised: `mint`, `getAssetDetails`, `updateStatus`, `updateCustodyBatch`, `burn`, `isAssetLocked`, `verifyCertificate`, `getAssetsByOwner`, `forceTransfer`, `safeTransferFrom`, `assetOwner`, `balanceOf`
+Functions exercised: `mint`, `getAssetDetails`, `updateStatus`, `updateCustody`, `updateCustodyBatch`, `burn`, `isAssetLocked`, `verifyCertificate`, `getAssetsByOwner`, `forceTransfer`, `safeTransferFrom`, `assetOwner`, `balanceOf`
 
 **TransactionOrderBook**  
 Test file: `test/TransactionOrderBook.t.sol`  
@@ -107,6 +109,9 @@ Functions exercised: `setGoldAccountLedger`, `setGoldAssetToken`, `setExecutionO
 19. `test_VerifyCertificate_NonExistentToken_Reverts` - invalid token rejected.
 20. `test_Burn_NonExistentToken_Reverts` - invalid token rejected.
 21. `test_UpdateCustodyBatch_SetsInTransit` - batch custody updates set status to in transit.
+22. `test_Reentrancy_SafeTransfer_DoesNotCorruptAssetOwner` - reentrancy safety on ERC1155 receiver hook.
+22. `test_UpdateCustody_SetsInTransit` - single custody update sets status to in transit.
+23. `test_UpdateCustody_Reverts_WhenUnauthorized` - custody update blocked for non-operators.
 
 ### `test/TransactionOrderBook.t.sol`
 1. `test_PrepareSignFlow` - register (prepare) order then counterparty signs.
@@ -143,6 +148,32 @@ Functions exercised: `setGoldAccountLedger`, `setGoldAssetToken`, `setExecutionO
 4. Order registered via `prepareOrder` with tokenIds + seller signature.
 5. LSP sets custody batch to `IN_TRANSIT`.
 6. Counterparty signs, then execute order and confirm asset transfer + ledger updates.
+
+## US-19 On-Chain Coverage
+1. LSP custody updates set assets to `IN_TRANSIT` via `updateCustody` and `updateCustodyBatch`.
+2. Transfers are blocked while assets are `IN_TRANSIT`.
+3. Execution moves assets from `IN_TRANSIT` to `IN_VAULT` and then transfers ownership.
+
+## US-19 Backend Plan (Stubs + Tests To Implement)
+This repo does not include backend code, so the items below are a plan and stub list to implement in the API gateway/service.
+
+**Mock Logistics Partner Stubs**
+1. `POST /partner/pickup` with `{ transaction_reference, token_ids, custody_party_id, custody_type }`
+2. `POST /partner/delivery` with `{ transaction_reference, token_ids, delivered_at }`
+3. `GET /partner/status/{transaction_reference}`
+
+**API Bridge Mapping Tests**
+1. Pickup event triggers `PUT /assets/{token_id}/custody` or batch custody update, and asset status becomes `IN_TRANSIT`.
+2. Delivery event triggers `POST /transactions/{reference}/sign` with `signing_role=counterparty`.
+3. Execution path triggers `PUT /transactions/{reference}/status` with `executed` or `POST /assets/transfer` based on the chosen backend flow.
+
+**Reconciliation Report Tests**
+1. Compare partner events vs on-chain events (`CustodyChanged`, `AssetStatusChanged`, `OrderSigned`, `OrderExecuted`) for the same `transaction_reference`.
+2. Generate a report with missing or out-of-order events flagged.
+
+**Timeout/Error Handling Tests**
+1. Partner timeout on pickup or delivery → retry with exponential backoff and log failure.
+2. Partner timeout beyond max retries → mark transaction in reconciliation report as `partner_timeout`.
 
 ## Common Failure Causes
 1. Missing role setup (GMO/REFINER/MINTER/TRADER).

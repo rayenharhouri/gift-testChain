@@ -270,7 +270,6 @@ contract TransactionOrderBook is Ownable {
         uint256 expiresAt,
         bytes memory signature
     ) external callerNotBlacklisted onlyOrderCreator returns (string memory txRef) {
-        require(_isGmo(msg.sender), "Not authorized: GMO required");
         require(tokenIds.length > 0, "Missing tokenIds");
         require(signature.length > 0, "Invalid signature");
 
@@ -278,8 +277,8 @@ contract TransactionOrderBook is Ownable {
         require(
             bytes(creatorGIC).length > 0 &&
                 keccak256(bytes(creatorGIC)) ==
-                keccak256(bytes(initiatorGIC)),
-            "Not initiator"
+                keccak256(bytes(initiatorGIC)) || _isGmo(msg.sender),
+            "Only GMO or initiator can prepare an order"
         );
 
         require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");

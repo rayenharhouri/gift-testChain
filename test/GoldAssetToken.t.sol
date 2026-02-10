@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
 import "../contracts/GoldAssetToken.sol";
+import "@openzeppelin/contracts/token/ERC1155/IERC1155Receiver.sol";
 
 contract MockMemberRegistry {
     mapping(address => uint256) public roles;
@@ -66,6 +67,50 @@ contract MockAccountLedger {
 
     function callsLength() external view returns (uint256) {
         return calls.length;
+    }
+}
+
+contract ReenteringReceiver is IERC1155Receiver {
+    GoldAssetToken private token;
+    address private attacker;
+    bool private reentered;
+
+    constructor(GoldAssetToken _token, address _attacker) {
+        token = _token;
+        attacker = _attacker;
+    }
+
+    function onERC1155Received(
+        address,
+        address,
+        uint256 id,
+        uint256,
+        bytes calldata
+    ) external override returns (bytes4) {
+        if (!reentered) {
+            reentered = true;
+            token.safeTransferFrom(address(this), attacker, id, 1, "");
+        }
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(
+        address,
+        address,
+        uint256[] calldata,
+        uint256[] calldata,
+        bytes calldata
+    ) external pure override returns (bytes4) {
+        return this.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(bytes4 interfaceId)
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return interfaceId == type(IERC1155Receiver).interfaceId;
     }
 }
 
@@ -535,6 +580,29 @@ contract GoldAssetTokenTest is Test {
         );
     }
 
+    function test_UpdateCustody_SetsInTransit() public {
+        uint256 tokenId = _mintOne();
+
+        vm.prank(custodian);
+        goldToken.updateCustody(tokenId, address(0xBEEF), "direct");
+
+        GoldAssetToken.GoldAsset memory asset = goldToken.getAssetDetails(
+            tokenId
+        );
+        assertEq(
+            uint8(asset.status),
+            uint8(GoldAssetToken.AssetStatus.IN_TRANSIT)
+        );
+    }
+
+    function test_UpdateCustody_Reverts_WhenUnauthorized() public {
+        uint256 tokenId = _mintOne();
+
+        vm.prank(address(0xDEAD));
+        vm.expectRevert("Not authorized: asset operator role required");
+        goldToken.updateCustody(tokenId, address(0xBEEF), "direct");
+    }
+
     function test_OldOwnerCannotBurnOrUpdateStatusAfterTransfer() public {
         uint256 tokenId = _mintOne();
         address to = address(0xBEEF);
@@ -600,5 +668,19 @@ contract GoldAssetTokenTest is Test {
         vm.prank(refiner);
         vm.expectRevert("Asset does not exist");
         goldToken.burn(999, "IGAN-1000", "Burn non-existent");
+    }
+
+    function test_Reentrancy_SafeTransfer_DoesNotCorruptAssetOwner() public {
+        uint256 tokenId = _mintOne();
+        address attacker = address(0xBEEF);
+        ReenteringReceiver receiver =
+            new ReenteringReceiver(goldToken, attacker);
+
+        vm.prank(owner);
+        goldToken.safeTransferFrom(owner, address(receiver), tokenId, 1, "");
+
+        assertEq(goldToken.balanceOf(attacker, tokenId), 1);
+        assertEq(goldToken.balanceOf(address(receiver), tokenId), 0);
+        assertEq(goldToken.assetOwner(tokenId), attacker);
     }
 }

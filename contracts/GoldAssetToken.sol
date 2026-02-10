@@ -585,7 +585,8 @@ contract GoldAssetToken is ERC1155, Ownable {
             }
         }
 
-        super._update(from, to, ids, values);
+        address[] memory prevOwners = new address[](ids.length);
+        bool[] memory shouldEmit = new bool[](ids.length);
 
         // Sync business ownership mapping + emit business transfer event
         for (uint256 i = 0; i < ids.length; i++) {
@@ -627,15 +628,24 @@ contract GoldAssetToken is ERC1155, Ownable {
 
                     // Emit only for standard transfers (forceTransfer already emits)
                     if (!isForceTransfer) {
-                        emit OwnershipUpdated(
-                            tokenId,
-                            prevOwner,
-                            to,
-                            "TRANSFER",
-                            block.timestamp
-                        );
+                        prevOwners[i] = prevOwner;
+                        shouldEmit[i] = true;
                     }
                 }
+            }
+        }
+
+        super._update(from, to, ids, values);
+
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (shouldEmit[i]) {
+                emit OwnershipUpdated(
+                    ids[i],
+                    prevOwners[i],
+                    to,
+                    "TRANSFER",
+                    block.timestamp
+                );
             }
         }
     }
