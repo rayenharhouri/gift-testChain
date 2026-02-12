@@ -180,7 +180,7 @@ contract VaultSiteRegistry is Ownable {
             bytes(insuranceExpirationDate).length > 0,
             "Invalid insurance expiration"
         );
-        require(bytes(lastAuditDate).length > 0, "Invalid last_audit_date");
+        
 
         // Member must exist and be ACTIVE
         uint8 status = memberRegistry.getMemberStatus(memberGIC);
