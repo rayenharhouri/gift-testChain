@@ -615,8 +615,8 @@ contract TransactionOrderBook is Ownable {
         require(bytes(memberGIC).length > 0, "Not authorized");
         require(
             keccak256(bytes(memberGIC)) ==
-                keccak256(bytes(order.counterpartyGIC)),
-            "Not counterparty"
+                keccak256(bytes(order.counterpartyGIC)) || _isGmo(msg.sender),
+            "Not counterparty or not GMO"
         );
 
         require(hasSigned[txRef][initiator], "Initiator not signed");
