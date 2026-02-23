@@ -12,6 +12,7 @@ contract GoldAccountLedgerTest is Test {
     address public platform  = address(1);
     address public custodian = address(2);
     address public user1     = address(3);
+    address public vaultOp   = address(4);
     address public updater   = address(9);
 
     // Common params for account creation
@@ -44,6 +45,13 @@ contract GoldAccountLedgerTest is Test {
             keccak256("custodian"),
             custodian,
             1 << 2
+        );
+        registry.registerMember(
+            "VAULTOP-001",
+            MemberRegistry.MemberType.COMPANY,
+            keccak256("vault-op"),
+            vaultOp,
+            1 << 3
         );
 
         vm.stopPrank();
@@ -176,6 +184,25 @@ contract GoldAccountLedgerTest is Test {
         ledger.updateBalance(igan, 5, "adjustment", 1);
 
         assertEq(ledger.getAccountBalance(igan), 5);
+    }
+
+    function testVaultOpCanCreateAccountAndUpdateBalance() public {
+        vm.prank(vaultOp);
+        string memory igan = ledger.createAccount(
+            "IGAN-4000",
+            "MEMBER-001",
+            VAULT_SITE_ID,
+            GUARANTEE_ACC,
+            PURPOSE,
+            INITIAL_DEP,
+            CERT_ABSENCE,
+            user1
+        );
+
+        vm.prank(vaultOp);
+        ledger.updateBalance(igan, 3, "vault-op adjustment", 1);
+
+        assertEq(ledger.getAccountBalance(igan), 3);
     }
 
     function testUpdateBalance_RevertsIfNotAuthorized() public {

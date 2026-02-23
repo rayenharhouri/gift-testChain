@@ -28,7 +28,9 @@ contract GoldAccountLedger is Ownable {
     /// @notice Role bitmasks aligned to the access matrix.
     uint256 public constant ROLE_REFINER = 1 << 0;
     uint256 public constant ROLE_MINTER = 1 << 1;
-    uint256 public constant ROLE_VAULT = (1 << 2) | (1 << 3);
+    uint256 public constant ROLE_CUSTODIAN = 1 << 2;
+    uint256 public constant ROLE_VAULT_OP = 1 << 3;
+    uint256 public constant ROLE_VAULT = ROLE_CUSTODIAN | ROLE_VAULT_OP;
     uint256 public constant ROLE_GMO = (1 << 6) | (1 << 7);
     uint256 public constant ROLE_TRADER = 1 << 8;
     uint256 public constant ROLE_ACCOUNT_CREATOR =

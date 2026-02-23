@@ -13,10 +13,11 @@ contract TransactionOrderBook is Ownable {
     uint8 public constant MEMBER_ACTIVE = 1;
     uint256 public constant ROLE_REFINER = 1 << 0;
     uint256 public constant ROLE_MINTER = 1 << 1;
+    uint256 public constant ROLE_VAULT_OP = 1 << 3;
     uint256 public constant ROLE_TRADER = 1 << 8;
     uint256 public constant ROLE_GMO = (1 << 6) | (1 << 7);
     uint256 public constant ROLE_ORDER_CREATOR =
-        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_GMO;
+        ROLE_REFINER | ROLE_MINTER | ROLE_VAULT_OP | ROLE_TRADER | ROLE_GMO;
     uint8 private constant ASSET_STATUS_IN_VAULT = 1;
     uint8 private constant ASSET_STATUS_IN_TRANSIT = 2;
     uint8 private constant ASSET_STATUS_PLEDGED = 3;
@@ -59,6 +60,22 @@ contract TransactionOrderBook is Ownable {
     struct RequestedAsset {
         string goldProductTypeId;
         uint256 quantityGrams;
+    }
+
+    struct CreateOrderInput {
+        string transactionRef;
+        string transactionId;
+        TransactionType txType;
+        string initiatorGIC;
+        string counterpartyGIC;
+        uint256[] tokenIds;
+        RequestedAsset[] requestedAssets;
+        string valuationDate;
+        string valuationCurrency;
+        uint256 transactionValue;
+        uint256 expiresAt;
+        string senderIGAN;
+        string receiverIGAN;
     }
 
     struct TransactionOrder {
@@ -237,21 +254,22 @@ contract TransactionOrderBook is Ownable {
         require(bytes(senderIGAN).length > 0, "Invalid senderIGAN");
         require(bytes(receiverIGAN).length > 0, "Invalid receiverIGAN");
         _validateAccounts(senderIGAN, receiverIGAN);
-        txRef = _createOrder(
-            transactionRef,
-            transactionId,
-            txType,
-            initiatorGIC,
-            counterpartyGIC,
-            tokenIds,
-            requestedAssets,
-            valuationDate,
-            valuationCurrency,
-            transactionValue,
-            expiresAt,
-            senderIGAN,
-            receiverIGAN
-        );
+        CreateOrderInput memory input = CreateOrderInput({
+            transactionRef: transactionRef,
+            transactionId: transactionId,
+            txType: txType,
+            initiatorGIC: initiatorGIC,
+            counterpartyGIC: counterpartyGIC,
+            tokenIds: tokenIds,
+            requestedAssets: requestedAssets,
+            valuationDate: valuationDate,
+            valuationCurrency: valuationCurrency,
+            transactionValue: transactionValue,
+            expiresAt: expiresAt,
+            senderIGAN: senderIGAN,
+            receiverIGAN: receiverIGAN
+        });
+        txRef = _createOrder(input);
     }
 
     function prepareOrder(
@@ -289,21 +307,22 @@ contract TransactionOrderBook is Ownable {
 
         TransactionOrder storage order = orders[transactionRef];
         if (order.createdAt == 0) {
-            txRef = _createOrder(
-                transactionRef,
-                transactionId,
-                txType,
-                initiatorGIC,
-                counterpartyGIC,
-                tokenIds,
-                requestedAssets,
-                valuationDate,
-                valuationCurrency,
-                transactionValue,
-                expiresAt,
-                senderIGAN,
-                receiverIGAN
-            );
+            CreateOrderInput memory input = CreateOrderInput({
+                transactionRef: transactionRef,
+                transactionId: transactionId,
+                txType: txType,
+                initiatorGIC: initiatorGIC,
+                counterpartyGIC: counterpartyGIC,
+                tokenIds: tokenIds,
+                requestedAssets: requestedAssets,
+                valuationDate: valuationDate,
+                valuationCurrency: valuationCurrency,
+                transactionValue: transactionValue,
+                expiresAt: expiresAt,
+                senderIGAN: senderIGAN,
+                receiverIGAN: receiverIGAN
+            });
+            txRef = _createOrder(input);
             order = orders[txRef];
         } else {
             require(
@@ -503,91 +522,83 @@ contract TransactionOrderBook is Ownable {
     }
 
     function _createOrder(
-        string memory transactionRef,
-        string memory transactionId,
-        TransactionType txType,
-        string memory initiatorGIC,
-        string memory counterpartyGIC,
-        uint256[] memory tokenIds,
-        RequestedAsset[] memory requestedAssets,
-        string memory valuationDate,
-        string memory valuationCurrency,
-        uint256 transactionValue,
-        uint256 expiresAt,
-        string memory senderIGAN,
-        string memory receiverIGAN
+        CreateOrderInput memory input
     ) internal returns (string memory txRef) {
-        require(bytes(transactionRef).length > 0, "Invalid transactionRef");
-        require(orders[transactionRef].createdAt == 0, "Order exists");
-        require(bytes(initiatorGIC).length > 0, "Invalid initiatorGIC");
-        require(bytes(counterpartyGIC).length > 0, "Invalid counterpartyGIC");
-        require(requestedAssets.length > 0, "Missing requested assets");
-        require(bytes(valuationDate).length > 0, "Invalid valuationDate");
-        require(bytes(valuationCurrency).length > 0, "Invalid currency");
+        require(bytes(input.transactionRef).length > 0, "Invalid transactionRef");
+        require(orders[input.transactionRef].createdAt == 0, "Order exists");
+        require(bytes(input.initiatorGIC).length > 0, "Invalid initiatorGIC");
+        require(
+            bytes(input.counterpartyGIC).length > 0,
+            "Invalid counterpartyGIC"
+        );
+        require(input.requestedAssets.length > 0, "Missing requested assets");
+        require(bytes(input.valuationDate).length > 0, "Invalid valuationDate");
+        require(bytes(input.valuationCurrency).length > 0, "Invalid currency");
 
-        for (uint256 i = 0; i < requestedAssets.length; i++) {
+        for (uint256 i = 0; i < input.requestedAssets.length; i++) {
             require(
-                bytes(requestedAssets[i].goldProductTypeId).length > 0,
+                bytes(input.requestedAssets[i].goldProductTypeId).length > 0,
                 "Invalid product type"
             );
             require(
-                requestedAssets[i].quantityGrams > 0,
+                input.requestedAssets[i].quantityGrams > 0,
                 "Invalid quantity"
             );
         }
 
         require(
-            memberRegistry.getMemberStatus(initiatorGIC) == MEMBER_ACTIVE,
+            memberRegistry.getMemberStatus(input.initiatorGIC) == MEMBER_ACTIVE,
             "Initiator not active"
         );
         require(
-            memberRegistry.getMemberStatus(counterpartyGIC) == MEMBER_ACTIVE,
+            memberRegistry.getMemberStatus(input.counterpartyGIC) ==
+                MEMBER_ACTIVE,
             "Counterparty not active"
         );
 
-        if (expiresAt != 0) {
-            require(expiresAt > block.timestamp, "Invalid expiresAt");
+        if (input.expiresAt != 0) {
+            require(input.expiresAt > block.timestamp, "Invalid expiresAt");
         }
 
-        if (bytes(transactionId).length == 0) {
-            transactionId = transactionRef;
+        if (bytes(input.transactionId).length == 0) {
+            input.transactionId = input.transactionRef;
         }
 
-        orders[transactionRef] = TransactionOrder({
-            transactionRef: transactionRef,
-            transactionId: transactionId,
-            txType: txType,
+        orders[input.transactionRef] = TransactionOrder({
+            transactionRef: input.transactionRef,
+            transactionId: input.transactionId,
+            txType: input.txType,
             status: TransactionStatus.PENDING_PREPARATION,
-            initiatorGIC: initiatorGIC,
-            counterpartyGIC: counterpartyGIC,
-            senderIGAN: senderIGAN,
-            receiverIGAN: receiverIGAN,
-            tokenIds: tokenIds,
-            requestedAssets: requestedAssets,
-            valuationDate: valuationDate,
-            valuationCurrency: valuationCurrency,
-            transactionValue: transactionValue,
+            initiatorGIC: input.initiatorGIC,
+            counterpartyGIC: input.counterpartyGIC,
+            senderIGAN: input.senderIGAN,
+            receiverIGAN: input.receiverIGAN,
+            tokenIds: input.tokenIds,
+            requestedAssets: input.requestedAssets,
+            valuationDate: input.valuationDate,
+            valuationCurrency: input.valuationCurrency,
+            transactionValue: input.transactionValue,
             createdAt: block.timestamp,
-            expiresAt: expiresAt,
+            expiresAt: input.expiresAt,
             executedAt: 0,
             createdBy: msg.sender
         });
 
         emit OrderCreated(
-            transactionRef,
-            transactionId,
-            txType,
-            initiatorGIC,
-            counterpartyGIC,
-            requestedAssets.length,
-            valuationCurrency,
-            transactionValue,
+            input.transactionRef,
+            input.transactionId,
+            input.txType,
+            input.initiatorGIC,
+            input.counterpartyGIC,
+            input.requestedAssets.length,
+            input.valuationCurrency,
+            input.transactionValue,
             TransactionStatus.PENDING_PREPARATION,
             block.timestamp,
-            expiresAt
+            input.expiresAt
         );
 
-        return transactionRef;
+        return input.transactionRef;
     }
 
 

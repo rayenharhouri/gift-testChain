@@ -11,8 +11,10 @@ contract TransactionOrderBookTest is Test {
 
     address initiator = address(0x1);
     address counterparty = address(0x2);
+    address initiatorVaultOp = address(0x4);
 
     uint256 constant ROLE_GMO = (1 << 6) | (1 << 7);
+    uint256 constant ROLE_VAULT_OP = 1 << 3;
 
     function setUp() public {
         registry = new MemberRegistry();
@@ -32,6 +34,13 @@ contract TransactionOrderBookTest is Test {
             keccak256("counterparty"),
             counterparty,
             ROLE_GMO
+        );
+        registry.registerMember(
+            "INITIATOR-VAULTOP",
+            MemberRegistry.MemberType.COMPANY,
+            keccak256("initiator-vault-op"),
+            initiatorVaultOp,
+            ROLE_VAULT_OP
         );
     }
 
@@ -109,5 +118,48 @@ contract TransactionOrderBookTest is Test {
         vm.prank(counterparty);
         vm.expectRevert("Not ready");
         orderBook.signOrder(txRef, hex"01", "counterparty");
+    }
+
+    function test_InitiatorVaultOpCanPrepareAndAddFirstSignature() public {
+        TransactionOrderBook.RequestedAsset[] memory req =
+            new TransactionOrderBook.RequestedAsset[](1);
+        req[0] = TransactionOrderBook.RequestedAsset({
+            goldProductTypeId: "BAR",
+            quantityGrams: 500
+        });
+
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = 7;
+
+        vm.prank(initiatorVaultOp);
+        string memory txRef = orderBook.prepareOrder(
+            "TX-VOP-001",
+            "TX-VOP-001",
+            TransactionOrderBook.TransactionType.TRANSFER,
+            "INITIATOR-VAULTOP",
+            "COUNTERPARTY",
+            "IGAN-7",
+            "IGAN-8",
+            tokenIds,
+            req,
+            "2026-02-20",
+            "USD",
+            50,
+            0,
+            "USR-VAULTOP-001",
+            hex"AA"
+        );
+
+        assertEq(
+            uint8(orderBook.getOrderStatus(txRef)),
+            uint8(TransactionOrderBook.TransactionStatus.PENDING_COUNTERPARTY)
+        );
+
+        TransactionOrderBook.Signature[] memory sigs =
+            orderBook.getOrderSignatures(txRef);
+        assertEq(sigs.length, 1);
+        assertEq(sigs[0].signer, initiatorVaultOp);
+        assertEq(sigs[0].signerRole, "initiator");
+        assertEq(sigs[0].signerUserId, "USR-VAULTOP-001");
     }
 }
