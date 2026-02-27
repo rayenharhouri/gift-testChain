@@ -67,7 +67,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         assertEq(igan, "IGAN-1000");
@@ -85,7 +86,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
         string memory a2 = ledger.createAccount(
             "IGAN-1001",
@@ -95,7 +97,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.stopPrank();
@@ -127,7 +130,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.stopPrank();
@@ -144,7 +148,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
     }
 
@@ -158,7 +163,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(platform);
@@ -177,7 +183,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(custodian);
@@ -196,7 +203,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            vaultOp
         );
 
         vm.prank(vaultOp);
@@ -215,7 +223,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(user1);
@@ -233,7 +242,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(platform);
@@ -273,7 +283,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(updater);
@@ -291,7 +302,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(platform);
@@ -314,7 +326,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
         ledger.createAccount(
             "IGAN-1001",
@@ -324,7 +337,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         string[] memory accounts = ledger.getAccountsByMember("MEMBER-001");
@@ -344,7 +358,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
         ledger.createAccount(
             "IGAN-1001",
@@ -354,7 +369,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         string[] memory accounts = ledger.getAccountsByAddress(user1);
@@ -389,7 +405,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         assertEq(igan, "IGAN-1000");
@@ -405,7 +422,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         uint256 t = 222;
@@ -428,7 +446,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         // Seed balance
@@ -466,7 +485,8 @@ contract GoldAccountLedgerTest is Test {
             PURPOSE,
             INITIAL_DEP,
             CERT_ABSENCE,
-            user1
+            user1,
+            platform
         );
 
         vm.prank(platform);

@@ -158,6 +158,7 @@ contract VaultRegistry is Ownable {
         );
 
         require(bytes(vaultId).length > 0, "Invalid vault_id");
+        // slither-disable-next-line incorrect-equality
         require(vaults[vaultId].createdAt == 0, "Vault already exists");
 
         require(bytes(memberInternalVaultId).length > 0, "Invalid internal id");

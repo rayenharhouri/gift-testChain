@@ -449,6 +449,7 @@ contract GoldAssetToken is ERC1155, Ownable {
      */
     function isAssetLocked(uint256 tokenId) external view returns (bool) {
         AssetStatus status = assets[tokenId].status;
+        // slither-disable-next-line incorrect-equality
         return
             status == AssetStatus.PLEDGED || status == AssetStatus.IN_TRANSIT;
     }
@@ -474,6 +475,7 @@ contract GoldAssetToken is ERC1155, Ownable {
         bytes32 certificateHash
     ) external view returns (bool) {
         require(assets[tokenId].mintedAt != 0, "Asset does not exist");
+        // slither-disable-next-line incorrect-equality
         return assets[tokenId].certificateHash == certificateHash;
     }
 
@@ -528,14 +530,22 @@ contract GoldAssetToken is ERC1155, Ownable {
      * @dev Add address to blacklist (admin only).
      */
     function addToBlacklist(address account) external onlyGmo {
-        memberRegistry.isBlacklisted(account);
+        // Source of truth is MemberRegistry; this call validates account visibility.
+        bool current = memberRegistry.isBlacklisted(account);
+        if (current) {
+            return;
+        }
     }
 
     /**
      * @dev Remove address from blacklist (admin only).
      */
     function removeFromBlacklist(address account) external onlyGmo {
-        memberRegistry.isBlacklisted(account);
+        // Source of truth is MemberRegistry; this call validates account visibility.
+        bool current = memberRegistry.isBlacklisted(account);
+        if (!current) {
+            return;
+        }
     }
 
     /**

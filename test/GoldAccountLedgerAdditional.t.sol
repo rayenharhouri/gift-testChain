@@ -37,7 +37,8 @@ contract GoldAccountLedgerAdditionalTest is Test {
             "trading",
             0,
             "",
-            ownerAddress
+            ownerAddress,
+            platform
         );
 
         GoldAccountLedger.Account memory account =
@@ -46,6 +47,7 @@ contract GoldAccountLedgerAdditionalTest is Test {
         assertEq(account.igan, "IGAN-1000");
         assertEq(account.memberGIC, "MEMBER-001");
         assertEq(account.ownerAddress, ownerAddress);
+        assertEq(account.vaultOperator, platform);
         assertEq(account.vaultSiteId, "VS-001");
         assertEq(account.guaranteeDepositAccount, "GDA-1");
         assertEq(account.goldAccountPurpose, "trading");

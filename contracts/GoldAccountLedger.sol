@@ -51,6 +51,8 @@ contract GoldAccountLedger is Ownable {
         string memberGIC;
         /// @notice EOA or contract address that operates this account.
         address ownerAddress;
+        /// @notice Address acting as vault operator for this account.
+        address vaultOperator;
         /// @notice Vault site identifier where the underlying gold is stored.
         string vaultSiteId;
         /// @notice Off-chain/fiat guarantee deposit account reference.
@@ -211,7 +213,8 @@ contract GoldAccountLedger is Ownable {
         string memory goldAccountPurpose,
         uint256 initialDeposit,
         string memory certificateAbsenceReason,
-        address ownerAddress
+        address ownerAddress,
+        address vaultOperator
     ) external onlyAccountCreator returns (string memory) {
         // Basic required fields
         require(bytes(igan).length > 0, "Invalid IGAN");
@@ -226,18 +229,21 @@ contract GoldAccountLedger is Ownable {
             "Invalid account purpose"
         );
         require(ownerAddress != address(0), "Invalid address");
+        require(vaultOperator != address(0), "Invalid vault operator");
 
         // Member must be active
         uint8 status = memberRegistry.getMemberStatus(memberGIC);
         require(status == MEMBER_ACTIVE, "Member not active");
 
         // IGAN must not be in use
+        // slither-disable-next-line incorrect-equality
         require(accounts[igan].createdAt == 0, "Account already exists");
 
         Account memory newAccount = Account({
             igan: igan,
             memberGIC: memberGIC,
             ownerAddress: ownerAddress,
+            vaultOperator: vaultOperator,
             vaultSiteId: vaultSiteId,
             guaranteeDepositAccount: guaranteeDepositAccount,
             goldAccountPurpose: goldAccountPurpose,
@@ -362,28 +368,5 @@ contract GoldAccountLedger is Ownable {
     ) external view returns (Account memory account) {
         require(accounts[igan].createdAt != 0, "Account does not exist");
         return accounts[igan];
-    }
-
-    // -------------------------------------------------------------------------
-    // Internal helpers (reserved / legacy)
-    // -------------------------------------------------------------------------
-
-    function _uint2str(uint256 _i) private pure returns (string memory) {
-        if (_i == 0) return "0";
-        uint256 j = _i;
-        uint256 len;
-        while (j != 0) {
-            len++;
-            j /= 10;
-        }
-        bytes memory bstr = new bytes(len);
-        uint256 k = len;
-        while (_i != 0) {
-            k = k - 1;
-            uint8 temp = 48 + uint8(_i - (_i / 10) * 10);
-            bstr[k] = bytes1(temp);
-            _i /= 10;
-        }
-        return string(bstr);
     }
 }

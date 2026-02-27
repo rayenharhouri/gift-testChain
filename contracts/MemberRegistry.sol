@@ -316,6 +316,7 @@ contract MemberRegistry is Ownable {
     function approveMember(
         string memory memberGIC
     ) external onlyGmo memberExists(memberGIC) returns (bool) {
+        // slither-disable-next-line incorrect-equality
         require(
             members[memberGIC].status == MemberStatus.PENDING,
             "Member not pending"
@@ -373,6 +374,7 @@ contract MemberRegistry is Ownable {
     ) external onlyGmo memberExists(memberGIC) returns (bool) {
         require(role != 0, "Invalid role");
         // Optional: only allow editing ACTIVE members (matches old assignRole behavior)
+        // slither-disable-next-line incorrect-equality
         require(
             members[memberGIC].status == MemberStatus.ACTIVE,
             "Member not active"

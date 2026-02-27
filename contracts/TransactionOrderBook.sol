@@ -372,6 +372,12 @@ contract TransactionOrderBook is Ownable {
         require(bytes(order.receiverIGAN).length > 0, "Missing receiverIGAN");
         require(order.tokenIds.length > 0, "Missing tokenIds");
 
+        // Checks-effects-interactions: lock execution state before external calls.
+        uint256 executedAt = block.timestamp;
+        order.status = TransactionStatus.EXECUTED;
+        order.executedAt = executedAt;
+        emit OrderExecuted(txRef, order.tokenIds.length, executedAt);
+
         if (transferAssetsOnExecute) {
             _transferAssets(order);
         }
@@ -379,10 +385,6 @@ contract TransactionOrderBook is Ownable {
         if (updateLedgerOnExecute) {
             _updateLedgerBalances(order);
         }
-
-        order.status = TransactionStatus.EXECUTED;
-        order.executedAt = block.timestamp;
-        emit OrderExecuted(txRef, order.tokenIds.length, block.timestamp);
     }
 
     function cancelOrder(
@@ -525,6 +527,7 @@ contract TransactionOrderBook is Ownable {
         CreateOrderInput memory input
     ) internal returns (string memory txRef) {
         require(bytes(input.transactionRef).length > 0, "Invalid transactionRef");
+        // slither-disable-next-line incorrect-equality
         require(orders[input.transactionRef].createdAt == 0, "Order exists");
         require(bytes(input.initiatorGIC).length > 0, "Invalid initiatorGIC");
         require(

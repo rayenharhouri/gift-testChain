@@ -74,6 +74,7 @@ contract IntegrationFlowTest is Test {
             "trading",
             0,
             "",
+            initiator,
             initiator
         );
         ledger.createAccount(
@@ -84,6 +85,7 @@ contract IntegrationFlowTest is Test {
             "custody",
             0,
             "",
+            counterparty,
             counterparty
         );
     }

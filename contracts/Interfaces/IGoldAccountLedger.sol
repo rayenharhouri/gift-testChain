@@ -6,6 +6,7 @@ interface IGoldAccountLedger {
         string igan;
         string memberGIC;
         address ownerAddress;
+        address vaultOperator;
         string vaultSiteId;
         string guaranteeDepositAccount;
         string goldAccountPurpose;

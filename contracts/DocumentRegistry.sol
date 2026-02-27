@@ -402,6 +402,7 @@ contract DocumentRegistry is Ownable {
         require(bytes(format).length > 0, "Invalid format");
         require(bytes(ownerEntityType).length > 0, "Invalid ownerEntityType");
         require(bytes(ownerEntityId).length > 0, "Invalid ownerEntityId");
+        // slither-disable-next-line incorrect-equality
         require(
             documents[documentId].registeredAt == 0,
             "Document already exists"
@@ -481,6 +482,7 @@ contract DocumentRegistry is Ownable {
         require(bytes(ownerEntityType).length > 0, "Invalid ownerEntityType");
         require(bytes(ownerEntityId).length > 0, "Invalid ownerEntityId");
         require(documentIds.length > 0, "Empty documentIds");
+        // slither-disable-next-line incorrect-equality
         require(
             documentSets[setId].registeredAt == 0,
             "Document set already exists"
