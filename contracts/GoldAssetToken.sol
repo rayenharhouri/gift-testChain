@@ -343,17 +343,6 @@ contract GoldAssetToken is ERC1155, Ownable {
             custodyType,
             block.timestamp
         );
-
-        AssetStatus previousStatus = assets[tokenId].status;
-        assets[tokenId].status = AssetStatus.IN_TRANSIT;
-        emit AssetStatusChanged(
-            tokenId,
-            previousStatus,
-            AssetStatus.IN_TRANSIT,
-            "CUSTODY_IN_TRANSIT",
-            msg.sender,
-            block.timestamp
-        );
     }
 
     /**
