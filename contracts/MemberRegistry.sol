@@ -19,7 +19,12 @@ contract MemberRegistry is Ownable {
     uint256 constant ROLE_VAULT = ROLE_CUSTODIAN | ROLE_VAULT_OP;
     uint256 constant ROLE_GMO = ROLE_PLATFORM | ROLE_GOVERNANCE;
     uint256 constant ROLE_USER_ADMIN =
-        ROLE_REFINER | ROLE_MINTER | ROLE_TRADER | ROLE_VAULT | ROLE_LSP | ROLE_GMO;
+        ROLE_REFINER |
+            ROLE_MINTER |
+            ROLE_TRADER |
+            ROLE_VAULT |
+            ROLE_LSP |
+            ROLE_GMO;
 
     // Enums
     enum MemberType {
@@ -236,9 +241,7 @@ contract MemberRegistry is Ownable {
         return blacklisted[account];
     }
 
-    function addToBlacklist(
-        address account
-    ) external onlyGmo returns (bool) {
+    function addToBlacklist(address account) external onlyGmo returns (bool) {
         require(account != address(0), "Invalid address");
         blacklisted[account] = true;
         emit BlacklistUpdated(account, true, msg.sender, block.timestamp);
@@ -278,7 +281,13 @@ contract MemberRegistry is Ownable {
         bytes32 memberHash,
         address userAddress,
         uint256 role
-    ) external onlyGmo callerNotBlacklisted notBlacklisted(userAddress) returns (bool) {
+    )
+        external
+        onlyGmo
+        callerNotBlacklisted
+        notBlacklisted(userAddress)
+        returns (bool)
+    {
         require(members[memberGIC].createdAt == 0, "Member already exists");
         require(bytes(memberGIC).length > 0, "Invalid member GIC");
         require(userAddress != address(0), "Invalid user address");
@@ -399,23 +408,38 @@ contract MemberRegistry is Ownable {
      */
     function registerUser(
         string memory userId,
-        bytes32 userHash
+        bytes32 userHash,
+        string memory memberGIC
     ) external onlyUserAdmin callerNotBlacklisted returns (bool) {
         require(users[userId].createdAt == 0, "User already exists");
         require(bytes(userId).length > 0, "Invalid user ID");
 
         address[] memory emptyAddresses = new address[](0);
+        User memory _newUser;   
+        if (bytes(memberGIC).length > 0) {
+            require(members[memberGIC].createdAt != 0, "Linked member does not exist");
+            User memory newUser = User({
+                userId: userId,
+                userHash: userHash,
+                linkedMemberGIC: memberGIC,
+                status: UserStatus.ACTIVE,
+                createdAt: block.timestamp,
+                adminAddresses: emptyAddresses
+            });
+            _newUser = newUser;
+        } else {
+            User memory newUser = User({
+                userId: userId,
+                userHash: userHash,
+                linkedMemberGIC: "",
+                status: UserStatus.ACTIVE,
+                createdAt: block.timestamp,
+                adminAddresses: emptyAddresses
+            });
+            _newUser=  newUser;
+        }
 
-        User memory newUser = User({
-            userId: userId,
-            userHash: userHash,
-            linkedMemberGIC: "",
-            status: UserStatus.ACTIVE,
-            createdAt: block.timestamp,
-            adminAddresses: emptyAddresses
-        });
-
-        users[userId] = newUser;
+        users[userId] = _newUser;
         userList.push(userId);
         addressToUserId[msg.sender] = userId;
 
