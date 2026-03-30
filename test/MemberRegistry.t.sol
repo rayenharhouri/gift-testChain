@@ -130,6 +130,30 @@ contract MemberRegistryTest is Test {
         assertEq(uint8(user.status), uint8(MemberRegistry.UserStatus.ACTIVE));
     }
 
+    function test_RegisterUser_WithLinkedMemberGIC() public {
+        vm.prank(admin);
+        registry.registerMember(
+            "GIFTCHZZ",
+            MemberRegistry.MemberType.COMPANY,
+            keccak256("member_hash"),
+            refiner,
+            0
+        );
+
+        vm.prank(admin);
+        bool success = registry.registerUser(
+            "USR-2025-00002",
+            keccak256("user_hash_2"),
+            "GIFTCHZZ"
+        );
+
+        assertTrue(success);
+
+        MemberRegistry.User memory user = registry.getUserDetails("USR-2025-00002");
+        assertEq(user.linkedMemberGIC, "GIFTCHZZ");
+        assertEq(uint8(user.status), uint8(MemberRegistry.UserStatus.ACTIVE));
+    }
+
     function test_LinkUserToMember() public {
         vm.prank(admin);
         registry.registerMember(

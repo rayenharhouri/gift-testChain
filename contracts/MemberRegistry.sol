@@ -408,16 +408,34 @@ contract MemberRegistry is Ownable {
      */
     function registerUser(
         string memory userId,
+        bytes32 userHash
+    ) external onlyUserAdmin callerNotBlacklisted returns (bool) {
+        return _registerUser(userId, userHash, "");
+    }
+
+    function registerUser(
+        string memory userId,
         bytes32 userHash,
         string memory memberGIC
     ) external onlyUserAdmin callerNotBlacklisted returns (bool) {
+        return _registerUser(userId, userHash, memberGIC);
+    }
+
+    function _registerUser(
+        string memory userId,
+        bytes32 userHash,
+        string memory memberGIC
+    ) internal returns (bool) {
         require(users[userId].createdAt == 0, "User already exists");
         require(bytes(userId).length > 0, "Invalid user ID");
 
         address[] memory emptyAddresses = new address[](0);
-        User memory _newUser;   
+        User memory _newUser;
         if (bytes(memberGIC).length > 0) {
-            require(members[memberGIC].createdAt != 0, "Linked member does not exist");
+            require(
+                members[memberGIC].createdAt != 0,
+                "Linked member does not exist"
+            );
             User memory newUser = User({
                 userId: userId,
                 userHash: userHash,
@@ -436,7 +454,7 @@ contract MemberRegistry is Ownable {
                 createdAt: block.timestamp,
                 adminAddresses: emptyAddresses
             });
-            _newUser=  newUser;
+            _newUser = newUser;
         }
 
         users[userId] = _newUser;

@@ -580,8 +580,15 @@ contract GoldAssetTokenTest is Test {
         );
     }
 
-    function test_UpdateCustody_SetsInTransit() public {
+    function test_UpdateCustody_SetsRegistered() public {
         uint256 tokenId = _mintOne();
+
+        vm.prank(owner);
+        goldToken.updateStatus(
+            tokenId,
+            GoldAssetToken.AssetStatus.IN_VAULT,
+            "Stored"
+        );
 
         vm.prank(custodian);
         goldToken.updateCustody(tokenId, address(0xBEEF), "direct");
@@ -591,7 +598,7 @@ contract GoldAssetTokenTest is Test {
         );
         assertEq(
             uint8(asset.status),
-            uint8(GoldAssetToken.AssetStatus.IN_TRANSIT)
+            uint8(GoldAssetToken.AssetStatus.REGISTERED)
         );
     }
 
