@@ -10,8 +10,8 @@ set -euo pipefail
 # Hardcoded config
 # -----------------------------
 HOST="127.0.0.1"
-PORT="9654"
-BLOCKCHAIN_ID="2MaVxspq7DR8Z2BjVzY9TWe5M2B6xxQJ45d3FKTk66CoVVv3ey"
+PORT="9656"
+BLOCKCHAIN_ID="2QAg6qzA1GMsBrEfwVZBdoWSa7vqsKcPPpX5JeAZPu3yUNs3ca"
 RPC_URL="http://${HOST}:${PORT}/ext/bc/${BLOCKCHAIN_ID}/rpc"
 REFRESH_SECS="2"
 DEFAULT_ADDRESS=""
