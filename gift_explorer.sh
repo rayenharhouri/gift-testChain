@@ -9,10 +9,10 @@ set -euo pipefail
 # -----------------------------
 # Hardcoded config
 # -----------------------------
-HOST="127.0.0.1"
-PORT="9656"
+BLOCKCHAIN_NAME="gift"
+CHAIN_ID="6969"
 BLOCKCHAIN_ID="2QAg6qzA1GMsBrEfwVZBdoWSa7vqsKcPPpX5JeAZPu3yUNs3ca"
-RPC_URL="http://${HOST}:${PORT}/ext/bc/${BLOCKCHAIN_ID}/rpc"
+RPC_URL="http://127.0.0.1:9656/ext/bc/${BLOCKCHAIN_ID}/rpc"
 REFRESH_SECS="2"
 DEFAULT_ADDRESS=""
 DEFAULT_TX_HASH=""
